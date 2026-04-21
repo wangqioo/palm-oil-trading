@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>棕榈油期货 · 交易看板</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #1c2129; --border: #30363d;
+  --text: #e6edf3; --muted: #7d8590; --accent: #58a6ff;
+  --bull: #ef5350; --bear: #26a69a;
+}
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* HEADER */
+#header { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; height: 48px; }
+#header .contract { font-size: 15px; font-weight: 700; }
+#header .price { font-size: 20px; font-weight: 700; }
+#header .chg { font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+.chg.up { background: rgba(239,83,80,.15); color: var(--bull); }
+.chg.dn { background: rgba(38,166,154,.15); color: var(--bear); }
+.sep { width: 1px; height: 24px; background: var(--border); flex-shrink:0; }
+.ts { color: var(--muted); font-size: 12px; }
+.spacer { flex: 1; }
+
+.period-btns { display: flex; gap: 4px; }
+.period-btn { padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; }
+.period-btn:hover { border-color: var(--accent); color: var(--accent); }
+.period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.icon-btn { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; transition: all .15s; }
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* MAIN */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* SIDEBAR */
+#sidebar { width: 240px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); overflow-y: auto; }
+.s-card { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.s-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; }
+
+.signal-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.signal-badge.long { background: rgba(239,83,80,.18); color: var(--bull); }
+.signal-badge.exit { background: rgba(38,166,154,.18); color: var(--bear); }
+.signal-badge.wait { background: rgba(125,133,144,.12); color: var(--muted); }
+
+.sub-sigs { display: flex; flex-direction: column; gap: 5px; }
+.sub-sig { display: flex; justify-content: space-between; align-items: center; }
+.sub-sig .lbl { color: var(--muted); font-size: 12px; }
+.sub-sig .val { font-size: 12px; font-weight: 600; }
+.val.on { color: #4caf50; }
+.val.off { color: var(--muted); }
+
+.metric-row { display: flex; justify-content: space-between; margin-bottom: 7px; }
+.metric-row .lbl { color: var(--muted); }
+.metric-row .val { font-weight: 600; }
+.val.bull { color: var(--bull); }
+.val.bear { color: var(--bear); }
+
+.level-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+.level-row.cur { background: rgba(88,166,255,.1); border-radius: 4px; padding: 4px 6px; }
+.level-row .lv-name { color: var(--muted); }
+.level-row .lv-val { font-weight: 600; font-family: monospace; }
+
+.hist-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(48,54,61,.5); font-size: 12px; }
+.hist-item:last-child { border: none; }
+.hist-long { color: var(--bull); font-weight: 700; }
+.hist-exit { color: var(--bear); font-weight: 700; }
+
+/* CHARTS */
+#charts-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.chart-wrap { position: relative; overflow: hidden; }
+.chart-wrap + .chart-wrap { border-top: 1px solid var(--border); }
+.chart-label { position: absolute; top: 6px; left: 10px; z-index: 10; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; pointer-events: none; }
+.chart-legend { position: absolute; top: 6px; left: 60px; z-index: 10; font-size: 11px; color: var(--text); pointer-events: none; display: flex; gap: 10px; }
+
+.kd-overlay { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; }
+
+.resizer { height: 5px; background: var(--border); cursor: ns-resize; flex-shrink: 0; transition: background .15s; }
+.resizer:hover { background: var(--accent); }
+
+#loading { position: absolute; inset: 0; background: rgba(13,17,23,.88); display: flex; align-items: center; justify-content: center; z-index: 100; font-size: 14px; color: var(--muted); flex-direction: column; gap: 8px; }
+#loading.hidden { display: none; }
+.spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+
+body.fullscreen #sidebar { display: none; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <span class="contract">棕榈油期货</span>
+  <span id="hdr-contract" style="color:var(--muted);font-size:12px">P2609</span>
+  <div class="sep"></div>
+  <span id="hdr-price" class="price" style="color:var(--bull)">--</span>
+  <span id="hdr-chg" class="chg up">--</span>
+  <div class="sep"></div>
+  <span id="hdr-ts" class="ts">--</span>
+  <div class="spacer"></div>
+  <div class="period-btns">
+    <button class="period-btn" data-p="1">1分</button>
+    <button class="period-btn active" data-p="15">15分</button>
+    <button class="period-btn" data-p="60">60分</button>
+    <button class="period-btn" data-p="daily">日线</button>
+  </div>
+  <div class="sep"></div>
+  <button class="icon-btn" id="btn-refresh" title="刷新">⟳</button>
+  <button class="icon-btn" id="btn-fs" title="全屏/还原">⛶</button>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div class="s-card">
+      <div class="s-title">当前信号</div>
+      <div id="sig-badge" class="signal-badge wait">◉ 等待信号</div>
+      <div class="sub-sigs">
+        <div class="sub-sig"><span class="lbl">破浪 黄点</span><span id="s-po"   class="val off">未触发</span></div>
+        <div class="sub-sig"><span class="lbl">空仓 绿点</span><span id="s-kong" class="val off">未触发</span></div>
+        <div class="sub-sig"><span class="lbl">波段王 多</span><span id="s-bsdm" class="val off">未触发</span></div>
+        <div class="sub-sig"><span class="lbl">波段王 空</span><span id="s-bsdk" class="val off">未触发</span></div>
+      </div>
+    </div>
+    <div class="s-card">
+      <div class="s-title">指标数值</div>
+      <div class="metric-row"><span class="lbl">收盘价</span><span id="m-close" class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">QRG 强度</span><span id="m-qrg" class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">K 值</span><span id="m-k" class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">D 值</span><span id="m-d" class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">支撑位</span><span id="m-sup" class="val">--</span></div>
+    </div>
+    <div class="s-card">
+      <div class="s-title">市场数据</div>
+      <div class="metric-row"><span class="lbl">资金流入</span><span id="m-cf"  class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">原油对比</span><span id="m-cmp" class="val">--</span></div>
+    </div>
+    <div class="s-card">
+      <div class="s-title">关键价位</div>
+      <div id="levels-list"></div>
+    </div>
+    <div class="s-card">
+      <div class="s-title">历史信号</div>
+      <div id="hist-list"></div>
+    </div>
+  </div>
+
+  <div id="charts-area">
+    <div id="loading"><div class="spinner"></div>加载数据中…</div>
+
+    <div id="wrap-kline" class="chart-wrap" style="height:55%">
+      <div class="chart-label">K 线</div>
+      <div class="chart-legend" id="legend-kline"></div>
+      <div id="chart-kline" style="width:100%;height:100%"></div>
+    </div>
+
+    <div class="resizer" id="res1"></div>
+
+    <div id="wrap-bsd" class="chart-wrap" style="height:26%">
+      <div class="chart-label">波段王</div>
+      <div class="chart-legend" id="legend-bsd"></div>
+      <canvas id="kd-overlay" class="kd-overlay"></canvas>
+      <div id="chart-bsd" style="width:100%;height:100%"></div>
+    </div>
+
+    <div class="resizer" id="res2"></div>
+
+    <div id="wrap-qrg" class="chart-wrap" style="height:19%">
+      <div class="chart-label">QRG 强度</div>
+      <div id="chart-qrg" style="width:100%;height:100%"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/data';
+let currentPeriod = '15';
+let allData = null;
+let kChart, bsdChart, qrgChart;
+let candleSeries, volSeries, kSeries, dSeries, qrgSeries;
+let priceLinesAdded = false;
+
+const COMMON = {
+  layout: { background: { color: '#0d1117' }, textColor: '#7d8590' },
+  grid: { vertLines: { color: '#1c2129' }, horzLines: { color: '#1c2129' } },
+  crosshair: {
+    mode: LightweightCharts.CrosshairMode.Normal,
+    vertLine: { color: '#58a6ff44', width: 1, style: 1 },
+    horzLine: { color: '#58a6ff44', width: 1, style: 1 }
+  },
+  rightPriceScale: { borderColor: '#30363d' },
+  timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+};
+
+function h(id) { return document.getElementById(id).clientHeight; }
+function w(id) { return document.getElementById(id).clientWidth;  }
+
+function initCharts() {
+  const ca = document.getElementById('charts-area');
+  const cw = ca.clientWidth;
+
+  kChart = LightweightCharts.createChart('chart-kline', {
+    ...COMMON, width: cw, height: h('wrap-kline'),
+  });
+  bsdChart = LightweightCharts.createChart('chart-bsd', {
+    ...COMMON, width: cw, height: h('wrap-bsd'),
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
+  });
+  qrgChart = LightweightCharts.createChart('chart-qrg', {
+    ...COMMON, width: cw, height: h('wrap-qrg'),
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
+  });
+
+  candleSeries = kChart.addCandlestickSeries({
+    upColor: '#ef5350', downColor: '#26a69a',
+    borderUpColor: '#ef5350', borderDownColor: '#26a69a',
+    wickUpColor: '#ef5350', wickDownColor: '#26a69a',
+  });
+
+  volSeries = kChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'vol',
+  });
+  kChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+  kSeries = bsdChart.addLineSeries({ color: '#ef5350', lineWidth: 1.5, title: 'K' });
+  dSeries = bsdChart.addLineSeries({ color: '#26a69a', lineWidth: 1.5, title: 'D' });
+
+  qrgSeries = qrgChart.addHistogramSeries({ base: 0 });
+
+  syncCharts();
+  setupLegends();
+  initResizers();
+}
+
+function syncCharts() {
+  let syncing = false;
+
+  [kChart, bsdChart, qrgChart].forEach(src => {
+    const others = [kChart, bsdChart, qrgChart].filter(c => c !== src);
+
+    src.subscribeCrosshairMove(p => {
+      if (!p.point) { others.forEach(c => c.clearCrosshairPosition()); return; }
+      // crosshair sync handled by time scale sync below
+    });
+
+    src.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      if (syncing || !range) return;
+      syncing = true;
+      others.forEach(c => c.timeScale().setVisibleLogicalRange(range));
+      if (allData) requestAnimationFrame(() => drawKDFill(allData.indicator_series));
+      syncing = false;
+    });
+  });
+}
+
+function setupLegends() {
+  kChart.subscribeCrosshairMove(p => {
+    const el = document.getElementById('legend-kline');
+    if (!p.time) { el.innerHTML = ''; return; }
+    const d = p.seriesData.get(candleSeries);
+    if (!d) return;
+    el.innerHTML =
+      `<span style="color:#b0bec5">O <b>${d.open?.toFixed(0)}</b></span>` +
+      `<span style="color:#ef5350">H <b>${d.high?.toFixed(0)}</b></span>` +
+      `<span style="color:#26a69a">L <b>${d.low?.toFixed(0)}</b></span>` +
+      `<span style="color:#e6edf3">C <b>${d.close?.toFixed(0)}</b></span>`;
+  });
+
+  bsdChart.subscribeCrosshairMove(p => {
+    const el = document.getElementById('legend-bsd');
+    if (!p.time) { el.innerHTML = ''; return; }
+    const kv = p.seriesData.get(kSeries);
+    const dv = p.seriesData.get(dSeries);
+    el.innerHTML =
+      `<span style="color:#ef5350">K <b>${kv?.value?.toFixed(1) ?? '--'}</b></span>` +
+      `<span style="color:#26a69a">D <b>${dv?.value?.toFixed(1) ?? '--'}</b></span>`;
+  });
+}
+
+// ─── Data load ────────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('loading').classList.remove('hidden');
+  try {
+    const res = await fetch(`${API}?period=${currentPeriod}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    allData = data;
+    renderAll(data);
+  } catch(e) {
+    document.getElementById('loading').innerHTML = `<span style="color:#ef5350">加载失败: ${e.message}</span>`;
+    return;
+  }
+  document.getElementById('loading').classList.add('hidden');
+}
+
+function renderAll(data) {
+  const bars = data.indicator_series || [];
+  if (!bars.length) return;
+
+  // K-line
+  candleSeries.setData(
+    bars.filter(b => b.open != null).map(b => ({
+      time: b.time, open: b.open, high: b.high, low: b.low, close: b.close
+    }))
+  );
+
+  volSeries.setData(
+    bars.map(b => ({
+      time: b.time, value: b.volume || 0,
+      color: (b.close >= b.open) ? 'rgba(239,83,80,0.45)' : 'rgba(38,166,154,0.45)'
+    }))
+  );
+
+  // Signal markers
+  const markers = [];
+  bars.forEach(b => {
+    if (b.po)   markers.push({ time: b.time, position: 'belowBar', color: '#FFD700', shape: 'arrowUp',   text: '做多', size: 1.2 });
+    if (b.kong) markers.push({ time: b.time, position: 'aboveBar', color: '#00E676', shape: 'arrowDown', text: '离场', size: 1.2 });
+  });
+  candleSeries.setMarkers(markers);
+
+  // Price lines (support/resistance) — add once
+  if (!priceLinesAdded && data.levels?.length) {
+    data.levels.slice(0, 6).forEach(lv => {
+      candleSeries.createPriceLine({
+        price: lv.value,
+        color: lv.current ? '#58a6ff' : '#30363d',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: lv.name,
+      });
+    });
+    priceLinesAdded = true;
+  }
+
+  // 波段王
+  kSeries.setData(bars.filter(b => b.K != null).map(b => ({ time: b.time, value: b.K })));
+  dSeries.setData(bars.filter(b => b.D != null).map(b => ({ time: b.time, value: b.D })));
+
+  // QRG
+  qrgSeries.setData(bars.map(b => ({
+    time: b.time,
+    value: b.QRG || 0,
+    color: (b.QRG || 0) >= 0 ? 'rgba(239,83,80,0.75)' : 'rgba(38,166,154,0.75)'
+  })));
+
+  kChart.timeScale().fitContent();
+  bsdChart.timeScale().fitContent();
+  qrgChart.timeScale().fitContent();
+
+  requestAnimationFrame(() => drawKDFill(bars));
+
+  updateHeader(data);
+  updateSidebar(data);
+}
+
+// ─── K/D Fill canvas overlay ──────────────────────────────────
+function drawKDFill(bars) {
+  const canvas = document.getElementById('kd-overlay');
+  const wrap   = document.getElementById('wrap-bsd');
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const valid = bars.filter(b => b.K != null && b.D != null);
+  if (valid.length < 2) return;
+
+  const ts = bsdChart.timeScale();
+  const x0 = ts.timeToCoordinate(valid[0].time);
+  const x1 = ts.timeToCoordinate(valid[1].time);
+  const barPx = (x0 != null && x1 != null) ? Math.abs(x1 - x0) : 8;
+  const hw = Math.max(1, barPx * 0.45);
+
+  for (const b of valid) {
+    const x = ts.timeToCoordinate(b.time);
+    if (x == null) continue;
+    const yK = kSeries.priceToCoordinate(b.K);
+    const yD = dSeries.priceToCoordinate(b.D);
+    if (yK == null || yD == null) continue;
+    ctx.fillStyle = b.K >= b.D ? 'rgba(239,83,80,0.72)' : 'rgba(38,166,154,0.72)';
+    ctx.fillRect(x - hw, Math.min(yK, yD), hw * 2, Math.max(1.5, Math.abs(yK - yD)));
+  }
+}
+
+// ─── Header ───────────────────────────────────────────────────
+function updateHeader(data) {
+  const meta = data.meta || {};
+  document.getElementById('hdr-contract').textContent = data.contract || '';
+  document.getElementById('hdr-ts').textContent = data.updated || '';
+  const price = meta.close;
+  if (price) {
+    document.getElementById('hdr-price').textContent = price.toFixed(0);
+    const bars = data.indicator_series || [];
+    const prev = bars.length > 1 ? bars[bars.length - 2]?.close : null;
+    if (prev) {
+      const pct  = ((price - prev) / prev * 100).toFixed(2);
+      const isUp = price >= prev;
+      const el = document.getElementById('hdr-chg');
+      el.textContent = (isUp ? '+' : '') + pct + '%';
+      el.className = 'chg ' + (isUp ? 'up' : 'dn');
+      document.getElementById('hdr-price').style.color = isUp ? '#ef5350' : '#26a69a';
+    }
+  }
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────
+function updateSidebar(data) {
+  const sig = data.signals || {};
+  const meta = data.meta   || {};
+
+  const badge = document.getElementById('sig-badge');
+  if (sig['做多']) {
+    badge.className = 'signal-badge long'; badge.textContent = '▲ 做多信号';
+  } else if (sig['离场']) {
+    badge.className = 'signal-badge exit'; badge.textContent = '▼ 离场信号';
+  } else {
+    badge.className = 'signal-badge wait'; badge.textContent = '◉ 等待信号';
+  }
+
+  function sv(id, on, onT, offT) {
+    const el = document.getElementById(id);
+    el.textContent = on ? onT : offT;
+    el.className = 'val ' + (on ? 'on' : 'off');
+  }
+  sv('s-po',   sig['破浪_黄点'], '★ 触发', '未触发');
+  sv('s-kong', sig['空仓_绿点'], '★ 触发', '未触发');
+  sv('s-bsdm', sig['波段王_多'], '★ 多头', '未触发');
+  sv('s-bsdk', sig['波段王_空'], '★ 空头', '未触发');
+
+  const qrg = meta.QRG ?? null;
+  const kv  = meta.K   ?? null;
+  document.getElementById('m-close').textContent = meta.close?.toFixed(0) ?? '--';
+  const qEl = document.getElementById('m-qrg');
+  qEl.textContent = qrg ?? '--';
+  qEl.className = 'val ' + (qrg >= 0 ? 'bull' : 'bear');
+  const kEl = document.getElementById('m-k');
+  kEl.textContent = kv ?? '--';
+  kEl.className = 'val ' + (kv >= 50 ? 'bull' : 'bear');
+  document.getElementById('m-d').textContent   = meta.D    ?? '--';
+  document.getElementById('m-sup').textContent = meta['支撑'] ?? '--';
+
+  const cf = data.capital_flow;
+  const cfEl = document.getElementById('m-cf');
+  if (cf?.net_flow_pct != null) {
+    cfEl.textContent = cf.net_flow_pct.toFixed(1) + '%';
+    cfEl.className = 'val ' + (cf.net_flow_pct >= 0 ? 'bull' : 'bear');
+  }
+  const cmp = data.comparison;
+  if (cmp?.correlation != null) {
+    document.getElementById('m-cmp').textContent = '相关性 ' + cmp.correlation.toFixed(2);
+  }
+
+  const lvList = document.getElementById('levels-list');
+  lvList.innerHTML = '';
+  (data.levels || []).slice(0, 8).forEach(lv => {
+    const r = document.createElement('div');
+    r.className = 'level-row' + (lv.current ? ' cur' : '');
+    r.innerHTML = `<span class="lv-name">${lv.name}</span><span class="lv-val">${lv.value?.toFixed(0)}</span>`;
+    lvList.appendChild(r);
+  });
+
+  const histList = document.getElementById('hist-list');
+  histList.innerHTML = '';
+  (data.history || []).forEach(h => {
+    const r = document.createElement('div');
+    r.className = 'hist-item';
+    const cls = h.signal.includes('做多') ? 'hist-long' : 'hist-exit';
+    r.innerHTML = `<span>${h.date}</span><span>${h.close}</span><span class="${cls}">${h.signal}</span>`;
+    histList.appendChild(r);
+  });
+}
+
+// ─── Resizable panels ─────────────────────────────────────────
+function initResizers() {
+  setupResizer('res1', 'wrap-kline', 'wrap-bsd', kChart, bsdChart);
+  setupResizer('res2', 'wrap-bsd',   'wrap-qrg', bsdChart, qrgChart);
+}
+
+function setupResizer(resId, topId, botId, topChart, botChart) {
+  const res = document.getElementById(resId);
+  let startY, startTop, startBot;
+  res.addEventListener('mousedown', e => {
+    startY = e.clientY;
+    startTop = document.getElementById(topId).clientHeight;
+    startBot = document.getElementById(botId).clientHeight;
+    const onMove = e2 => {
+      const dy = e2.clientY - startY;
+      const newTop = Math.max(80, startTop + dy);
+      const newBot = Math.max(60, startBot - dy);
+      document.getElementById(topId).style.height = newTop + 'px';
+      document.getElementById(botId).style.height = newBot + 'px';
+      const cw = document.getElementById('charts-area').clientWidth;
+      topChart.resize(cw, newTop);
+      botChart.resize(cw, newBot);
+      if (allData) requestAnimationFrame(() => drawKDFill(allData.indicator_series));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ─── Buttons ──────────────────────────────────────────────────
+document.querySelectorAll('.period-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPeriod = btn.dataset.p;
+    priceLinesAdded = false;
+    loadData();
+  });
+});
+
+document.getElementById('btn-refresh').addEventListener('click', () => {
+  const btn = document.getElementById('btn-refresh');
+  btn.style.animation = 'spin .8s linear';
+  setTimeout(() => { btn.style.animation = ''; }, 800);
+  loadData();
+});
+
+document.getElementById('btn-fs').addEventListener('click', () => {
+  document.body.classList.toggle('fullscreen');
+  setTimeout(() => {
+    const cw = document.getElementById('charts-area').clientWidth;
+    kChart.resize(cw,   h('wrap-kline'));
+    bsdChart.resize(cw, h('wrap-bsd'));
+    qrgChart.resize(cw, h('wrap-qrg'));
+    if (allData) drawKDFill(allData.indicator_series);
+  }, 100);
+});
+
+window.addEventListener('resize', () => {
+  const cw = document.getElementById('charts-area').clientWidth;
+  kChart.resize(cw,   h('wrap-kline'));
+  bsdChart.resize(cw, h('wrap-bsd'));
+  qrgChart.resize(cw, h('wrap-qrg'));
+  if (allData) drawKDFill(allData.indicator_series);
+});
+
+// Auto-refresh every 60s
+setInterval(loadData, 60000);
+
+// Boot
+initCharts();
+loadData();
+</script>
+</body>
+</html>
