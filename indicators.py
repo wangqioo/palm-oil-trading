@@ -52,9 +52,9 @@ def sma(series, n, m):
     """
     TDX SMA(X, N, M) = 威尔德平滑均值
     公式：Y = (M*X + (N-M)*Y') / N
+    TDX 从第1根开始计算，无预热 NaN 期
     """
     result = series.copy().astype(float)
-    result.iloc[:n] = np.nan
     alpha = m / n
     for i in range(1, len(series)):
         if pd.isna(result.iloc[i - 1]):
@@ -159,9 +159,9 @@ def calc_bsd_wang(df):
 
     ma5 = ma(c, 5)
 
-    # 信号
-    long_sig  = cross(K, D) & (ma5 < c)          # 多：K上穿D + 收盘>MA5
-    short_sig = cross(D, K) & (ma5 > pd.Series(0, index=df.index))  # 空：D上穿K
+    # 信号（原版TDX公式）
+    long_sig  = cross(K, D) & (c > ma5)   # CROSS(K,D) AND MA(CLOSE,5)<CLOSE
+    short_sig = cross(D, K)               # CROSS(D,K) AND MA(CLOSE,5) → MA5非零恒真
 
     result = df.copy()
     result["K"] = K

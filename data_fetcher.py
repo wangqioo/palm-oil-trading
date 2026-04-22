@@ -37,7 +37,8 @@ def _load_cache(name):
 
 def get_palm_oil_data_akshare(days=40):
     """
-    棕榈油历史数据（新浪财经，单次请求，失败用缓存）
+    返回 P2609 当前合约日线数据（用于展示，和慧赢保持一致）
+    同时在末尾附带 warmup 标记，供调用方识别
     """
     try:
         import akshare as ak
@@ -50,7 +51,7 @@ def get_palm_oil_data_akshare(days=40):
 
         df.columns = [c.lower() for c in df.columns]
         df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date").tail(days).reset_index(drop=True)
+        df = df.sort_values("date").reset_index(drop=True)
 
         _save_cache("palm_oil", df)
         print(f"棕榈油({PALM_MAIN_CONTRACT}): {len(df)} 条，"
@@ -61,72 +62,80 @@ def get_palm_oil_data_akshare(days=40):
         print(f"棕榈油API失败: {e}，使用缓存...")
         cached = _load_cache("palm_oil")
         if cached is not None:
-            print(f"缓存数据: {len(cached)} 条，"
-                  f"最新 {cached['date'].iloc[-1].date()} ⚠ 非实时")
+            print(f"缓存数据: {len(cached)} 条 ⚠ 非实时")
         return cached
 
 
-def get_crude_oil_data_akshare(days=30):
+def get_palm_oil_warmup():
     """
-    布伦特原油历史数据（yfinance，最稳定）
-    失败时使用 INE 数据兜底
+    拼接历史合约用于指标预热（不用于展示），
+    在 P2609 数据前面拼接足够的历史，确保 SMA/EMA 充分收敛
     """
-    # 方案A：yfinance 布伦特
+    WARMUP_CONTRACTS = [
+        'P1905','P1909',
+        'P2001','P2005','P2009',
+        'P2101','P2105','P2109',
+        'P2201','P2205','P2209',
+        'P2301','P2305','P2309',
+        'P2401','P2405','P2409',
+        'P2501','P2505','P2509',
+        'P2601','P2605','P2609',
+    ]
+    try:
+        import akshare as ak
+        frames = []
+        for c in WARMUP_CONTRACTS:
+            try:
+                df = ak.futures_zh_daily_sina(symbol=c)
+                if df is not None and not df.empty:
+                    df.columns = [c2.lower() for c2 in df.columns]
+                    df["date"] = pd.to_datetime(df["date"])
+                    frames.append(df)
+            except Exception:
+                pass
+
+        if not frames:
+            return None
+
+        combined = pd.concat(frames, ignore_index=True)
+        combined = combined.sort_values("date")
+        combined = combined.drop_duplicates(subset=["date"], keep="last")
+        combined = combined.reset_index(drop=True)
+        _save_cache("palm_oil_warmup", combined)
+        print(f"预热数据: {len(combined)} 条，{combined['date'].iloc[0].date()} ~ {combined['date'].iloc[-1].date()}")
+        return combined
+
+    except Exception as e:
+        print(f"预热数据失败: {e}")
+        cached = _load_cache("palm_oil_warmup")
+        return cached
+
+
+def get_crude_oil_data_akshare():
+    """
+    布伦特原油历史数据，取全量可用历史
+    """
     try:
         import yfinance as yf
         ticker = yf.Ticker("BZ=F")
-        hist = ticker.history(period="3mo")
+        hist = ticker.history(period="max")  # 取全部历史
         if hist.empty:
             raise ValueError("空数据")
 
         df = hist.reset_index()[["Date", "Open", "High", "Low", "Close", "Volume"]]
         df.columns = ["date", "open", "high", "low", "close", "volume"]
         df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
-        df = df.sort_values("date").tail(days).reset_index(drop=True)
+        df = df.sort_values("date").reset_index(drop=True)
 
         _save_cache("crude_oil", df)
         print(f"布伦特(BZ=F): {len(df)} 条，"
-              f"{df['date'].iloc[-1].date()} 收={df['close'].iloc[-1]:.2f}美元")
+              f"{df['date'].iloc[0].date()} ~ {df['date'].iloc[-1].date()}"
+              f" 收={df['close'].iloc[-1]:.2f}美元")
         return df
 
     except Exception as e:
         print(f"原油yfinance失败: {e}")
 
-    # 方案B：INE 日报（国内原油SC）
-    try:
-        import akshare as ak
-        records = []
-        check_date = datetime.now()
-        found = 0
-        while found < days and (datetime.now() - check_date).days < 60:
-            date_str = check_date.strftime("%Y%m%d")
-            try:
-                day_df = ak.get_ine_daily(date=date_str)
-                if day_df is not None and not day_df.empty:
-                    sc = day_df[day_df["variety"] == "SC"]
-                    if not sc.empty:
-                        row = sc.loc[sc["volume"].astype(float).idxmax()]
-                        records.append({
-                            "date": check_date.strftime("%Y-%m-%d"),
-                            "open": float(row["open"]),   "high": float(row["high"]),
-                            "low":  float(row["low"]),    "close": float(row["close"]),
-                            "volume": float(row["volume"]),
-                        })
-                        found += 1
-            except Exception:
-                pass
-            check_date -= timedelta(days=1)
-
-        if records:
-            df = pd.DataFrame(records[::-1])
-            df["date"] = pd.to_datetime(df["date"])
-            _save_cache("crude_oil", df)
-            print(f"原油INE-SC: {len(df)} 条，{df['date'].iloc[-1].date()} 收={df['close'].iloc[-1]:.1f}")
-            return df
-    except Exception as e:
-        print(f"原油INE失败: {e}")
-
-    # 方案C：缓存兜底
     cached = _load_cache("crude_oil")
     if cached is not None:
         print(f"原油缓存: {len(cached)} 条 ⚠ 非实时")

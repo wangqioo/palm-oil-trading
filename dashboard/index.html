@@ -3,18 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>棕榈油期货 · 交易看板</title>
+<title>期货交易看板</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0d1117; --bg2: #161b22; --bg3: #1c2129; --border: #30363d;
+  --bg: #000000; --bg2: #0a0a0a; --bg3: #111111; --border: #2a2a2a;
   --text: #e6edf3; --muted: #7d8590; --accent: #58a6ff;
   --bull: #ef5350; --bear: #26a69a;
 }
 body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-/* HEADER */
 #header { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; height: 48px; }
 #header .contract { font-size: 15px; font-weight: 700; }
 #header .price { font-size: 20px; font-weight: 700; }
@@ -24,75 +23,89 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .sep { width: 1px; height: 24px; background: var(--border); flex-shrink:0; }
 .ts { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }
-
 .period-btns { display: flex; gap: 4px; }
 .period-btn { padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; }
 .period-btn:hover { border-color: var(--accent); color: var(--accent); }
 .period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-
 .icon-btn { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; transition: all .15s; }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* MAIN */
 #main { display: flex; flex: 1; overflow: hidden; }
 
-/* SIDEBAR */
 #sidebar { width: 240px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); overflow-y: auto; }
 .s-card { padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .s-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; }
-
 .signal-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
 .signal-badge.long { background: rgba(239,83,80,.18); color: var(--bull); }
 .signal-badge.exit { background: rgba(38,166,154,.18); color: var(--bear); }
 .signal-badge.wait { background: rgba(125,133,144,.12); color: var(--muted); }
-
 .sub-sigs { display: flex; flex-direction: column; gap: 5px; }
 .sub-sig { display: flex; justify-content: space-between; align-items: center; }
 .sub-sig .lbl { color: var(--muted); font-size: 12px; }
 .sub-sig .val { font-size: 12px; font-weight: 600; }
 .val.on { color: #4caf50; }
 .val.off { color: var(--muted); }
-
 .metric-row { display: flex; justify-content: space-between; margin-bottom: 7px; }
 .metric-row .lbl { color: var(--muted); }
 .metric-row .val { font-weight: 600; }
 .val.bull { color: var(--bull); }
 .val.bear { color: var(--bear); }
-
 .level-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
 .level-row.cur { background: rgba(88,166,255,.1); border-radius: 4px; padding: 4px 6px; }
 .level-row .lv-name { color: var(--muted); }
 .level-row .lv-val { font-weight: 600; font-family: monospace; }
-
 .hist-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(48,54,61,.5); font-size: 12px; }
 .hist-item:last-child { border: none; }
 .hist-long { color: var(--bull); font-weight: 700; }
 .hist-exit { color: var(--bear); font-weight: 700; }
 
-/* CHARTS */
+/* 自选股面板 */
+.wl-search-wrap { position: relative; margin-bottom: 8px; }
+.wl-search { width: 100%; background: #111; border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; padding: 6px 10px; outline: none; transition: border-color .15s; }
+.wl-search:focus { border-color: var(--accent); }
+.wl-search::placeholder { color: var(--muted); }
+.wl-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #1a1a1a; border: 1px solid var(--border); border-radius: 6px; z-index: 200; max-height: 220px; overflow-y: auto; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+.wl-dropdown.open { display: block; }
+.wl-drop-item { padding: 7px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 12px; transition: background .1s; }
+.wl-drop-item:hover { background: rgba(88,166,255,.12); }
+.wl-drop-item .di-name { color: var(--text); font-weight: 600; }
+.wl-drop-item .di-meta { color: var(--muted); font-size: 11px; }
+.wl-drop-searching { padding: 10px; color: var(--muted); font-size: 12px; text-align: center; }
+.wl-add-row { display: flex; gap: 6px; margin-top: 6px; }
+.wl-add-input { flex: 1; background: #111; border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; padding: 5px 8px; outline: none; }
+.wl-add-input:focus { border-color: var(--accent); }
+.wl-add-btn { padding: 5px 10px; background: var(--accent); border: none; border-radius: 6px; color: #fff; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.wl-add-btn:hover { opacity: .85; }
+.watchlist-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 6px; border-radius: 5px; cursor: pointer; transition: background .12s; }
+.watchlist-item:hover { background: rgba(88,166,255,.08); }
+.watchlist-item.active { background: rgba(88,166,255,.16); }
+.watchlist-item .wl-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.watchlist-item .wl-code { font-size: 11px; color: var(--muted); }
+.watchlist-item .wl-del { font-size: 14px; color: var(--muted); padding: 0 2px; line-height: 1; opacity: 0; transition: opacity .12s; }
+.watchlist-item:hover .wl-del { opacity: 1; }
+.watchlist-item .wl-del:hover { color: #ef5350; }
+
 #charts-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 .chart-wrap { position: relative; overflow: hidden; }
 .chart-wrap + .chart-wrap { border-top: 1px solid var(--border); }
 .chart-label { position: absolute; top: 6px; left: 10px; z-index: 10; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; pointer-events: none; }
-.chart-legend { position: absolute; top: 6px; left: 60px; z-index: 10; font-size: 11px; color: var(--text); pointer-events: none; display: flex; gap: 10px; }
-
-.kd-overlay { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; }
-
+.chart-legend { position: absolute; top: 6px; left: 60px; z-index: 10; font-size: 11px; color: var(--text); pointer-events: none; display: flex; gap: 10px; flex-wrap: wrap; }
 .resizer { height: 5px; background: var(--border); cursor: ns-resize; flex-shrink: 0; transition: background .15s; }
 .resizer:hover { background: var(--accent); }
-
 #loading { position: absolute; inset: 0; background: rgba(13,17,23,.88); display: flex; align-items: center; justify-content: center; z-index: 100; font-size: 14px; color: var(--muted); flex-direction: column; gap: 8px; }
 #loading.hidden { display: none; }
 .spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
-
 body.fullscreen #sidebar { display: none; }
+
+/* 波段王 canvas overlay */
+.bsd-canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; }
 </style>
 </head>
 <body>
 
 <div id="header">
-  <span class="contract">棕榈油期货</span>
+  <span id="hdr-name" class="contract">期货看板</span>
   <span id="hdr-contract" style="color:var(--muted);font-size:12px">P2609</span>
   <div class="sep"></div>
   <span id="hdr-price" class="price" style="color:var(--bull)">--</span>
@@ -102,7 +115,9 @@ body.fullscreen #sidebar { display: none; }
   <div class="spacer"></div>
   <div class="period-btns">
     <button class="period-btn" data-p="1">1分</button>
+    <button class="period-btn" data-p="5">5分</button>
     <button class="period-btn active" data-p="15">15分</button>
+    <button class="period-btn" data-p="30">30分</button>
     <button class="period-btn" data-p="60">60分</button>
     <button class="period-btn" data-p="daily">日线</button>
   </div>
@@ -113,6 +128,21 @@ body.fullscreen #sidebar { display: none; }
 
 <div id="main">
   <div id="sidebar">
+    <div class="s-card">
+      <div class="s-title">自选</div>
+      <!-- 搜索框 -->
+      <div class="wl-search-wrap">
+        <input id="wl-search" class="wl-search" placeholder="搜索品种或代码…" autocomplete="off">
+        <div id="wl-dropdown" class="wl-dropdown"></div>
+      </div>
+      <!-- 直接输入合约代码添加 -->
+      <div class="wl-add-row">
+        <input id="wl-add-input" class="wl-add-input" placeholder="如 RB2510" autocomplete="off">
+        <button id="wl-add-btn" class="wl-add-btn">+ 添加</button>
+      </div>
+      <!-- 自选列表 -->
+      <div id="watchlist" style="margin-top:10px"></div>
+    </div>
     <div class="s-card">
       <div class="s-title">当前信号</div>
       <div id="sig-badge" class="signal-badge wait">◉ 等待信号</div>
@@ -133,8 +163,8 @@ body.fullscreen #sidebar { display: none; }
     </div>
     <div class="s-card">
       <div class="s-title">市场数据</div>
-      <div class="metric-row"><span class="lbl">资金流入</span><span id="m-cf"  class="val">--</span></div>
-      <div class="metric-row"><span class="lbl">原油对比</span><span id="m-cmp" class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">多头占比</span><span id="m-cf"  class="val">--</span></div>
+      <div class="metric-row"><span class="lbl">原油走势</span><span id="m-cmp" class="val">--</span></div>
     </div>
     <div class="s-card">
       <div class="s-title">关键价位</div>
@@ -149,6 +179,7 @@ body.fullscreen #sidebar { display: none; }
   <div id="charts-area">
     <div id="loading"><div class="spinner"></div>加载数据中…</div>
 
+    <!-- 主图 K线 -->
     <div id="wrap-kline" class="chart-wrap" style="height:55%">
       <div class="chart-label">K 线</div>
       <div class="chart-legend" id="legend-kline"></div>
@@ -157,104 +188,141 @@ body.fullscreen #sidebar { display: none; }
 
     <div class="resizer" id="res1"></div>
 
+    <!-- 波段王副图 -->
     <div id="wrap-bsd" class="chart-wrap" style="height:26%">
       <div class="chart-label">波段王</div>
       <div class="chart-legend" id="legend-bsd"></div>
-      <canvas id="kd-overlay" class="kd-overlay"></canvas>
+      <!-- canvas 画色块柱 -->
+      <canvas id="bsd-canvas" class="bsd-canvas"></canvas>
       <div id="chart-bsd" style="width:100%;height:100%"></div>
     </div>
 
-    <div class="resizer" id="res2"></div>
-
-    <div id="wrap-qrg" class="chart-wrap" style="height:19%">
-      <div class="chart-label">QRG 强度</div>
-      <div id="chart-qrg" style="width:100%;height:100%"></div>
-    </div>
   </div>
 </div>
 
 <script>
 const API = '/api/data';
 let currentPeriod = '15';
+let currentSymbol = 'P2609';
+let currentSymbolName = '棕榈油2609';
 let allData = null;
-let kChart, bsdChart, qrgChart;
-let candleSeries, volSeries, kSeries, dSeries, qrgSeries;
-let priceLinesAdded = false;
+let kChart, bsdChart;
+let candleSeries, volSeries, supportSeries, markerSeries;
+let maSeries = {};
+let bsdBaseSeries;
+let extremeLine10, extremeLine90;
+let activePriceLines = [];
+let viewInitialized = false;
 
 const COMMON = {
-  layout: { background: { color: '#0d1117' }, textColor: '#7d8590' },
-  grid: { vertLines: { color: '#1c2129' }, horzLines: { color: '#1c2129' } },
+  layout: { background: { color: '#000000' }, textColor: '#888888' },
+  grid: { vertLines: { color: '#111111' }, horzLines: { color: '#111111' } },
   crosshair: {
     mode: LightweightCharts.CrosshairMode.Normal,
     vertLine: { color: '#58a6ff44', width: 1, style: 1 },
     horzLine: { color: '#58a6ff44', width: 1, style: 1 }
   },
   rightPriceScale: { borderColor: '#30363d' },
-  timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+  timeScale: {
+    borderColor: '#30363d',
+    timeVisible: true,
+    secondsVisible: false,
+    rightOffset: 3,
+    barSpacing: 12,
+    minBarSpacing: 2,
+  },
 };
 
 function h(id) { return document.getElementById(id).clientHeight; }
 function w(id) { return document.getElementById(id).clientWidth;  }
 
 function initCharts() {
-  const ca = document.getElementById('charts-area');
-  const cw = ca.clientWidth;
+  const cw = document.getElementById('charts-area').clientWidth;
 
+  // ── 主图 ──────────────────────────────────────────
   kChart = LightweightCharts.createChart('chart-kline', {
     ...COMMON, width: cw, height: h('wrap-kline'),
   });
-  bsdChart = LightweightCharts.createChart('chart-bsd', {
-    ...COMMON, width: cw, height: h('wrap-bsd'),
-    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
-  });
-  qrgChart = LightweightCharts.createChart('chart-qrg', {
-    ...COMMON, width: cw, height: h('wrap-qrg'),
-    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
-  });
 
+  // K线：慧赢配色 — 阳线红色，阴线白色
   candleSeries = kChart.addCandlestickSeries({
-    upColor: '#ef5350', downColor: '#26a69a',
-    borderUpColor: '#ef5350', borderDownColor: '#26a69a',
-    wickUpColor: '#ef5350', wickDownColor: '#26a69a',
+    upColor: '#ef5350',   downColor: '#ffffff',
+    borderUpColor: '#ef5350', borderDownColor: '#cccccc',
+    wickUpColor:   '#ef5350', wickDownColor:   '#cccccc',
   });
 
+  // 成交量
   volSeries = kChart.addHistogramSeries({
     priceFormat: { type: 'volume' },
     priceScaleId: 'vol',
   });
   kChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
-  kSeries = bsdChart.addLineSeries({ color: '#ef5350', lineWidth: 1.5, title: 'K' });
-  dSeries = bsdChart.addLineSeries({ color: '#26a69a', lineWidth: 1.5, title: 'D' });
+  // 支撑线：慧赢蓝色，线宽2
+  supportSeries = kChart.addLineSeries({
+    color: '#00AAFF', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid,
+    lastValueVisible: false, priceLineVisible: false, title: '支撑',
+  });
 
-  qrgSeries = qrgChart.addHistogramSeries({ base: 0 });
+  // M1~M5：粗细递增（1~3px），下降黄/上升粉，与慧赢带状视觉一致
+  const maWidths = { M1: 1, M2: 1, M3: 2, M4: 2, M5: 3 };
+  ['M1','M2','M3','M4','M5'].forEach(name => {
+    maSeries[name] = kChart.addLineSeries({
+      color: '#FFD700', lineWidth: maWidths[name],
+      lastValueVisible: false, priceLineVisible: false, title: name,
+    });
+  });
+
+  // 信号标记专用 series — 最后添加确保渲染在所有线条之上
+  markerSeries = kChart.addLineSeries({
+    color: 'transparent', lineWidth: 0,
+    lastValueVisible: false, priceLineVisible: false,
+  });
+
+  // ── 波段王副图 ────────────────────────────────────
+  bsdChart = LightweightCharts.createChart('chart-bsd', {
+    ...COMMON, width: cw, height: h('wrap-bsd'),
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.02, bottom: 0.02 } },
+  });
+
+  // 用一条透明线固定纵轴范围 0~100
+  bsdBaseSeries = bsdChart.addLineSeries({
+    color: 'transparent', lineWidth: 0,
+    lastValueVisible: false, priceLineVisible: false,
+  });
+
+  // 极端顶部线90：黄色实线（慧赢截图可见），底部线10不显示
+  extremeLine10 = bsdChart.addLineSeries({
+    color: 'transparent', lineWidth: 0,
+    lastValueVisible: false, priceLineVisible: false,
+  });
+  extremeLine90 = bsdChart.addLineSeries({
+    color: '#FFD700', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid,
+    lastValueVisible: false, priceLineVisible: false,
+  });
 
   syncCharts();
   setupLegends();
   initResizers();
 }
 
+// ── 时间轴联动 ────────────────────────────────────────
 function syncCharts() {
   let syncing = false;
-
-  [kChart, bsdChart, qrgChart].forEach(src => {
-    const others = [kChart, bsdChart, qrgChart].filter(c => c !== src);
-
-    src.subscribeCrosshairMove(p => {
-      if (!p.point) { others.forEach(c => c.clearCrosshairPosition()); return; }
-      // crosshair sync handled by time scale sync below
-    });
-
+  [kChart, bsdChart].forEach(src => {
+    const others = [kChart, bsdChart].filter(c => c !== src);
     src.timeScale().subscribeVisibleLogicalRangeChange(range => {
       if (syncing || !range) return;
       syncing = true;
       others.forEach(c => c.timeScale().setVisibleLogicalRange(range));
-      if (allData) requestAnimationFrame(() => drawKDFill(allData.indicator_series));
+      if (allData) requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
       syncing = false;
     });
   });
 }
 
+
+// ── Legend ───────────────────────────────────────────
 function setupLegends() {
   kChart.subscribeCrosshairMove(p => {
     const el = document.getElementById('legend-kline');
@@ -270,20 +338,21 @@ function setupLegends() {
 
   bsdChart.subscribeCrosshairMove(p => {
     const el = document.getElementById('legend-bsd');
-    if (!p.time) { el.innerHTML = ''; return; }
-    const kv = p.seriesData.get(kSeries);
-    const dv = p.seriesData.get(dSeries);
+    if (!p.time || !allData) { el.innerHTML = ''; return; }
+    // 从原始数据找对应K/D值
+    const bar = allData.indicator_series.find(b => b.time === p.time);
+    if (!bar) return;
     el.innerHTML =
-      `<span style="color:#ef5350">K <b>${kv?.value?.toFixed(1) ?? '--'}</b></span>` +
-      `<span style="color:#26a69a">D <b>${dv?.value?.toFixed(1) ?? '--'}</b></span>`;
+      `<span style="color:#ef5350">K <b>${bar.K?.toFixed(1) ?? '--'}</b></span>` +
+      `<span style="color:#26a69a">D <b>${bar.D?.toFixed(1) ?? '--'}</b></span>`;
   });
 }
 
-// ─── Data load ────────────────────────────────────────────────
+// ── 数据加载 ─────────────────────────────────────────
 async function loadData() {
   document.getElementById('loading').classList.remove('hidden');
   try {
-    const res = await fetch(`${API}?period=${currentPeriod}`);
+    const res = await fetch(`${API}?period=${currentPeriod}&symbol=${currentSymbol}&name=${encodeURIComponent(currentSymbolName)}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     allData = data;
@@ -299,7 +368,7 @@ function renderAll(data) {
   const bars = data.indicator_series || [];
   if (!bars.length) return;
 
-  // K-line
+  // ── K线 ───────────────────────────────────────────
   candleSeries.setData(
     bars.filter(b => b.open != null).map(b => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close
@@ -313,18 +382,41 @@ function renderAll(data) {
     }))
   );
 
-  // Signal markers
+  // ── 支撑线 ────────────────────────────────────────
+  supportSeries.setData(
+    bars.filter(b => b['支撑'] != null).map(b => ({ time: b.time, value: b['支撑'] }))
+  );
+
+  // ── M1~M5 均线（黄色）+ M1S~M5S 上升段（粉色） ──
+  // 用 setData 传递分段颜色（逐点切换颜色）
+  ['M1','M2','M3','M4','M5'].forEach(name => {
+    const pts = bars
+      .filter(b => b[name] != null)
+      .map(b => ({
+        time: b.time,
+        value: b[name],
+        color: b[`${name}r`] ? '#FF00FF' : '#FFD700',  // 上升=粉色 下降=黄色
+      }));
+    maSeries[name].setData(pts);
+  });
+
+  // ── 信号标记 — 挂在最顶层 markerSeries 上，不被任何线遮挡
+  // 黄点: 破浪(主图做多)  绿点: 空仓(主图离场)  — 公式仅有这两个K线信号
+  markerSeries.setData(bars.map(b => ({ time: b.time, value: b.close })));
   const markers = [];
   bars.forEach(b => {
-    if (b.po)   markers.push({ time: b.time, position: 'belowBar', color: '#FFD700', shape: 'arrowUp',   text: '做多', size: 1.2 });
-    if (b.kong) markers.push({ time: b.time, position: 'aboveBar', color: '#00E676', shape: 'arrowDown', text: '离场', size: 1.2 });
+    if (b.po)   markers.push({ time: b.time, position: 'belowBar', color: '#FFD700', shape: 'circle', size: 1.2 });
+    if (b.kong) markers.push({ time: b.time, position: 'aboveBar', color: '#00CC00', shape: 'circle', size: 1.2 });
   });
-  candleSeries.setMarkers(markers);
+  markerSeries.setMarkers(markers);
 
-  // Price lines (support/resistance) — add once
-  if (!priceLinesAdded && data.levels?.length) {
+  // ── 支撑压力位虚线 ────────────────────────────────
+  // 先清除旧价格线
+  activePriceLines.forEach(pl => { try { candleSeries.removePriceLine(pl); } catch(e) {} });
+  activePriceLines = [];
+  if (data.levels?.length) {
     data.levels.slice(0, 6).forEach(lv => {
-      candleSeries.createPriceLine({
+      const pl = candleSeries.createPriceLine({
         price: lv.value,
         color: lv.current ? '#58a6ff' : '#30363d',
         lineWidth: 1,
@@ -332,34 +424,42 @@ function renderAll(data) {
         axisLabelVisible: true,
         title: lv.name,
       });
+      activePriceLines.push(pl);
     });
-    priceLinesAdded = true;
   }
 
-  // 波段王
-  kSeries.setData(bars.filter(b => b.K != null).map(b => ({ time: b.time, value: b.K })));
-  dSeries.setData(bars.filter(b => b.D != null).map(b => ({ time: b.time, value: b.D })));
+  // ── 波段王：用 canvas 画色块，bsdBaseSeries 固定纵轴 ──
+  // 注意：bsdBaseSeries/extremeLine 必须覆盖全部 bars 时间点，
+  // 保证 bsdChart 时间轴与 kChart 完全对齐，否则逻辑索引会错位。
+  bsdBaseSeries.setData([
+    { time: bars[0].time, value: 0 },
+    { time: bars[bars.length - 1].time, value: 100 },
+  ]);
 
-  // QRG
-  qrgSeries.setData(bars.map(b => ({
-    time: b.time,
-    value: b.QRG || 0,
-    color: (b.QRG || 0) >= 0 ? 'rgba(239,83,80,0.75)' : 'rgba(38,166,154,0.75)'
-  })));
+  // 极端线用全部 bars 时间轴
+  extremeLine10.setData(bars.map(b => ({ time: b.time, value: 10 })));
+  extremeLine90.setData(bars.map(b => ({ time: b.time, value: 90 })));
 
-  kChart.timeScale().fitContent();
-  bsdChart.timeScale().fitContent();
-  qrgChart.timeScale().fitContent();
+  // 首次加载或切换品种/周期时，默认显示最近200条，刷新时保持当前视图
+  if (!viewInitialized) {
+    const total = bars.length;
+    const defaultSpan = Math.min(200, total);
+    const anchor = total - 1 + 3;
+    const initRange = { from: anchor - defaultSpan, to: anchor };
+    kChart.timeScale().setVisibleLogicalRange(initRange);
+    bsdChart.timeScale().setVisibleLogicalRange(initRange);
+    viewInitialized = true;
+  }
 
-  requestAnimationFrame(() => drawKDFill(bars));
+  requestAnimationFrame(() => drawBsdCanvas(bars));
 
   updateHeader(data);
   updateSidebar(data);
 }
 
-// ─── K/D Fill canvas overlay ──────────────────────────────────
-function drawKDFill(bars) {
-  const canvas = document.getElementById('kd-overlay');
+// ── 波段王 canvas 色块柱（STICKLINE K/D 之间，红=多/绿=空）──
+function drawBsdCanvas(bars) {
+  const canvas = document.getElementById('bsd-canvas');
   const wrap   = document.getElementById('wrap-bsd');
   canvas.width  = wrap.clientWidth;
   canvas.height = wrap.clientHeight;
@@ -373,23 +473,32 @@ function drawKDFill(bars) {
   const x0 = ts.timeToCoordinate(valid[0].time);
   const x1 = ts.timeToCoordinate(valid[1].time);
   const barPx = (x0 != null && x1 != null) ? Math.abs(x1 - x0) : 8;
-  const hw = Math.max(1, barPx * 0.45);
+  const hw = Math.max(2, barPx * 0.48); // 接近铺满，留极小间隙
 
+  const yZero = bsdBaseSeries.priceToCoordinate(0);
   for (const b of valid) {
     const x = ts.timeToCoordinate(b.time);
     if (x == null) continue;
-    const yK = kSeries.priceToCoordinate(b.K);
-    const yD = dSeries.priceToCoordinate(b.D);
-    if (yK == null || yD == null) continue;
-    ctx.fillStyle = b.K >= b.D ? 'rgba(239,83,80,0.72)' : 'rgba(38,166,154,0.72)';
-    ctx.fillRect(x - hw, Math.min(yK, yD), hw * 2, Math.max(1.5, Math.abs(yK - yD)));
+    const yK = bsdBaseSeries.priceToCoordinate(b.K);
+    const yD = bsdBaseSeries.priceToCoordinate(b.D);
+    if (yK == null || yD == null || yZero == null) continue;
+    // 慧赢 STICKLINE 是 K 到 D 之间，但6层叠加很粗
+    // 画法：从 min(K,D) 到 max(K,D)，颜色由 K>=D 决定
+    const top = Math.min(yK, yD);
+    const ht  = Math.max(2, Math.abs(yK - yD));
+    ctx.fillStyle = b.K >= b.D ? '#CC0000' : '#00AA00';
+    ctx.fillRect(x - hw, top, hw * 2, ht);
+    // 再画一层半透明加强视觉厚度（模拟慧赢6层叠加效果）
+    ctx.fillStyle = b.K >= b.D ? 'rgba(255,60,60,0.35)' : 'rgba(0,200,0,0.35)';
+    ctx.fillRect(x - hw - 1, top, hw * 2 + 2, ht);
   }
 }
 
-// ─── Header ───────────────────────────────────────────────────
+// ── Header ───────────────────────────────────────────
 function updateHeader(data) {
   const meta = data.meta || {};
-  document.getElementById('hdr-contract').textContent = data.contract || '';
+  document.getElementById('hdr-name').textContent = data.name || '期货看板';
+  document.getElementById('hdr-contract').textContent = data.symbol || '';
   document.getElementById('hdr-ts').textContent = data.updated || '';
   const price = meta.close;
   if (price) {
@@ -407,7 +516,7 @@ function updateHeader(data) {
   }
 }
 
-// ─── Sidebar ──────────────────────────────────────────────────
+// ── Sidebar ──────────────────────────────────────────
 function updateSidebar(data) {
   const sig = data.signals || {};
   const meta = data.meta   || {};
@@ -443,15 +552,25 @@ function updateSidebar(data) {
   document.getElementById('m-d').textContent   = meta.D    ?? '--';
   document.getElementById('m-sup').textContent = meta['支撑'] ?? '--';
 
+  // 资金流：使用 bull_ratio 字段
   const cf = data.capital_flow;
   const cfEl = document.getElementById('m-cf');
-  if (cf?.net_flow_pct != null) {
-    cfEl.textContent = cf.net_flow_pct.toFixed(1) + '%';
-    cfEl.className = 'val ' + (cf.net_flow_pct >= 0 ? 'bull' : 'bear');
+  if (cf?.bull_ratio != null) {
+    cfEl.textContent = cf.bull_ratio.toFixed(1) + '% · ' + (cf.signal || '');
+    cfEl.className = 'val ' + (cf.bull_ratio >= 50 ? 'bull' : 'bear');
+  } else {
+    cfEl.textContent = '--';
   }
+
+  // 原油对比：使用 divergence + palm_5d_chg 字段
   const cmp = data.comparison;
-  if (cmp?.correlation != null) {
-    document.getElementById('m-cmp').textContent = '相关性 ' + cmp.correlation.toFixed(2);
+  const cmpEl = document.getElementById('m-cmp');
+  if (cmp?.divergence != null) {
+    const sign = cmp.palm_5d_chg >= 0 ? '+' : '';
+    cmpEl.textContent = `${cmp.divergence} ${sign}${cmp.palm_5d_chg?.toFixed(1)}%`;
+    cmpEl.className = 'val ' + (cmp.palm_5d_chg >= 0 ? 'bull' : 'bear');
+  } else {
+    cmpEl.textContent = '--';
   }
 
   const lvList = document.getElementById('levels-list');
@@ -474,10 +593,9 @@ function updateSidebar(data) {
   });
 }
 
-// ─── Resizable panels ─────────────────────────────────────────
+// ── 可拖拽分隔条 ─────────────────────────────────────
 function initResizers() {
   setupResizer('res1', 'wrap-kline', 'wrap-bsd', kChart, bsdChart);
-  setupResizer('res2', 'wrap-bsd',   'wrap-qrg', bsdChart, qrgChart);
 }
 
 function setupResizer(resId, topId, botId, topChart, botChart) {
@@ -496,7 +614,7 @@ function setupResizer(resId, topId, botId, topChart, botChart) {
       const cw = document.getElementById('charts-area').clientWidth;
       topChart.resize(cw, newTop);
       botChart.resize(cw, newBot);
-      if (allData) requestAnimationFrame(() => drawKDFill(allData.indicator_series));
+      if (allData) requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
@@ -507,16 +625,203 @@ function setupResizer(resId, topId, botId, topChart, botChart) {
   });
 }
 
-// ─── Buttons ──────────────────────────────────────────────────
+// ── 右锚缩放：滚轮以最右侧（最新K线）为固定轴缩放 ──
+// 用 setVisibleLogicalRange 控制，to 固定在数据末尾，from 随缩放移动。
+let _rightAnchorTo = null; // 缩放时固定的右端逻辑索引
+
+function initRightAnchorZoom() {
+  const chartEls = [
+    document.getElementById('chart-kline'),
+    document.getElementById('chart-bsd'),
+  ];
+  chartEls.forEach(el => {
+    el.addEventListener('wheel', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ts = kChart.timeScale();
+      const range = ts.getVisibleLogicalRange();
+      if (!range) return;
+
+      // 固定锚点：用数据总条数作为右端（不随用户拖拽变动）
+      const totalBars = allData?.indicator_series?.length ?? 0;
+      const anchor = totalBars - 1 + 3; // +3 是 rightOffset 留白
+
+      const span = range.to - range.from;
+      // 向上滚(deltaY<0)=放大=看更少K线；向下滚=缩小=看更多K线
+      const factor = e.deltaY < 0 ? 0.85 : 1.18;
+      const newSpan = Math.max(5, Math.min(span * factor, totalBars * 2));
+
+      const newRange = { from: anchor - newSpan, to: anchor };
+      kChart.timeScale().setVisibleLogicalRange(newRange);
+      bsdChart.timeScale().setVisibleLogicalRange(newRange);
+      if (allData) requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
+    }, { passive: false });
+  });
+}
+
+// ── 按钮 ─────────────────────────────────────────────
 document.querySelectorAll('.period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPeriod = btn.dataset.p;
-    priceLinesAdded = false;
+    viewInitialized = false;
     loadData();
   });
 });
+
+// ── 自选股管理 ────────────────────────────────────────
+const DEFAULT_WATCHLIST = [
+  { symbol: 'BC2505', name: '国际铜2505' },
+  { symbol: 'AG2606', name: '白银2606' },
+  { symbol: 'P2609',  name: '棕榈油2609' },
+  { symbol: 'CU2505', name: '铜2505' },
+  { symbol: 'SA2509', name: '纯碱2509' },
+];
+
+function loadWatchlist() {
+  try { return JSON.parse(localStorage.getItem('watchlist')) || DEFAULT_WATCHLIST; }
+  catch { return DEFAULT_WATCHLIST; }
+}
+
+function saveWatchlist(list) {
+  localStorage.setItem('watchlist', JSON.stringify(list));
+}
+
+function renderWatchlist() {
+  const list = loadWatchlist();
+  const container = document.getElementById('watchlist');
+  container.innerHTML = '';
+  list.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'watchlist-item' + (item.symbol === currentSymbol ? ' active' : '');
+    div.dataset.symbol = item.symbol;
+    div.dataset.name = item.name;
+    // 名称 / 代码 / 删除按钮
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = 'display:flex;flex-direction:column;gap:1px;';
+    nameEl.innerHTML = `<span class="wl-name">${item.name.replace(/[0-9]+$/, '')}</span><span class="wl-code">${item.symbol}</span>`;
+    const del = document.createElement('span');
+    del.className = 'wl-del';
+    del.textContent = '×';
+    del.title = '删除';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      const newList = loadWatchlist().filter(i => i.symbol !== item.symbol);
+      saveWatchlist(newList);
+      // 如果删的是当前品种，切到第一个
+      if (item.symbol === currentSymbol && newList.length > 0) {
+        currentSymbol = newList[0].symbol;
+        currentSymbolName = newList[0].name;
+        viewInitialized = false;
+        loadData();
+      }
+      renderWatchlist();
+    });
+    div.appendChild(nameEl);
+    div.appendChild(del);
+    div.addEventListener('click', () => {
+      currentSymbol = item.symbol;
+      currentSymbolName = item.name;
+      viewInitialized = false;
+      renderWatchlist();
+      loadData();
+    });
+    container.appendChild(div);
+  });
+}
+
+async function addToWatchlist(symbol, name) {
+  symbol = symbol.toUpperCase().trim();
+  if (!symbol) return;
+  const list = loadWatchlist();
+  if (list.find(i => i.symbol === symbol)) {
+    // 已存在，直接切换
+    currentSymbol = symbol;
+    currentSymbolName = name || symbol;
+    viewInitialized = false;
+    renderWatchlist();
+    loadData();
+    return;
+  }
+  // 验证合约存在
+  const btn = document.getElementById('wl-add-btn');
+  btn.textContent = '…';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/resolve?symbol=${encodeURIComponent(symbol)}`);
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    const finalName = name || data.name || symbol;
+    list.push({ symbol, name: finalName });
+    saveWatchlist(list);
+    currentSymbol = symbol;
+    currentSymbolName = finalName;
+    viewInitialized = false;
+    renderWatchlist();
+    loadData();
+  } catch(e) {
+    alert('添加失败: ' + e.message);
+  } finally {
+    btn.textContent = '+ 添加';
+    btn.disabled = false;
+  }
+}
+
+// 直接输入合约代码添加
+document.getElementById('wl-add-btn').addEventListener('click', () => {
+  const val = document.getElementById('wl-add-input').value.trim();
+  if (val) {
+    document.getElementById('wl-add-input').value = '';
+    addToWatchlist(val);
+  }
+});
+document.getElementById('wl-add-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('wl-add-btn').click();
+});
+
+// 搜索框：输入品种名/前缀 → 下拉显示连续合约列表 → 点击后填入具体合约代码
+let _searchTimer = null;
+const searchInput = document.getElementById('wl-search');
+const dropdown = document.getElementById('wl-dropdown');
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(_searchTimer);
+  const q = searchInput.value.trim();
+  if (!q) { dropdown.classList.remove('open'); return; }
+  dropdown.innerHTML = '<div class="wl-drop-searching">搜索中…</div>';
+  dropdown.classList.add('open');
+  _searchTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const items = await res.json();
+      if (!items.length) {
+        dropdown.innerHTML = '<div class="wl-drop-searching">无匹配品种</div>';
+        return;
+      }
+      dropdown.innerHTML = '';
+      items.forEach(it => {
+        const d = document.createElement('div');
+        d.className = 'wl-drop-item';
+        d.innerHTML = `<span class="di-name">${it.name}</span><span class="di-meta">${it.prefix}××××</span>`;
+        d.addEventListener('click', () => {
+          // 把前缀填到"添加合约"输入框，让用户补全月份
+          document.getElementById('wl-add-input').value = it.prefix;
+          document.getElementById('wl-add-input').focus();
+          searchInput.value = '';
+          dropdown.classList.remove('open');
+        });
+        dropdown.appendChild(d);
+      });
+    } catch { dropdown.innerHTML = '<div class="wl-drop-searching">搜索失败</div>'; }
+  }, 300);
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.wl-search-wrap')) dropdown.classList.remove('open');
+});
+
+renderWatchlist();
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
   const btn = document.getElementById('btn-refresh');
@@ -531,8 +836,7 @@ document.getElementById('btn-fs').addEventListener('click', () => {
     const cw = document.getElementById('charts-area').clientWidth;
     kChart.resize(cw,   h('wrap-kline'));
     bsdChart.resize(cw, h('wrap-bsd'));
-    qrgChart.resize(cw, h('wrap-qrg'));
-    if (allData) drawKDFill(allData.indicator_series);
+    if (allData) drawBsdCanvas(allData.indicator_series);
   }, 100);
 });
 
@@ -540,15 +844,14 @@ window.addEventListener('resize', () => {
   const cw = document.getElementById('charts-area').clientWidth;
   kChart.resize(cw,   h('wrap-kline'));
   bsdChart.resize(cw, h('wrap-bsd'));
-  qrgChart.resize(cw, h('wrap-qrg'));
-  if (allData) drawKDFill(allData.indicator_series);
+  if (allData) drawBsdCanvas(allData.indicator_series);
 });
 
-// Auto-refresh every 60s
 setInterval(loadData, 60000);
 
-// Boot
+// ── 启动 ─────────────────────────────────────────────
 initCharts();
+initRightAnchorZoom();
 loadData();
 </script>
 </body>

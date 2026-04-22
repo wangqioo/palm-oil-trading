@@ -13,3 +13,6 @@ data/*.pkl
 logs/
 knowledge_base/signals/*.csv
 reports/
+.DS_Store
+*.jpg
+*.png
