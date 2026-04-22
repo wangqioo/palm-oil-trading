@@ -122,8 +122,41 @@ body.fullscreen #sidebar { display: none; }
     <button class="period-btn" data-p="daily">日线</button>
   </div>
   <div class="sep"></div>
+  <button class="period-btn" id="btn-import" style="padding:4px 12px;">导入公式</button>
   <button class="icon-btn" id="btn-refresh" title="刷新">⟳</button>
   <button class="icon-btn" id="btn-fs" title="全屏/还原">⛶</button>
+</div>
+
+<!-- 导入公式模态框 -->
+<div id="modal-import" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;width:560px;max-width:95vw;padding:24px;display:flex;flex-direction:column;gap:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:15px;font-weight:700;">导入慧赢公式</span>
+      <button id="modal-close" style="background:none;border:none;color:#7d8590;font-size:20px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+        <label style="font-size:11px;color:#7d8590;">指标名称</label>
+        <input id="fi-name" placeholder="如：JLHB绝路航标" style="background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#e6edf3;font-size:13px;padding:7px 10px;outline:none;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <label style="font-size:11px;color:#7d8590;">位置</label>
+        <select id="fi-panel" style="background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#e6edf3;font-size:13px;padding:7px 10px;outline:none;">
+          <option value="sub">副图</option>
+          <option value="main">主图</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <label style="font-size:11px;color:#7d8590;">TDX 公式代码</label>
+      <textarea id="fi-source" rows="12" placeholder="粘贴慧赢/通达信公式…" style="background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#e6edf3;font-size:12px;font-family:monospace;padding:10px;outline:none;resize:vertical;line-height:1.5;"></textarea>
+    </div>
+    <div id="fi-error" style="color:#ef5350;font-size:12px;display:none;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button id="fi-cancel" style="padding:8px 18px;background:transparent;border:1px solid #2a2a2a;border-radius:6px;color:#7d8590;cursor:pointer;font-size:13px;">取消</button>
+      <button id="fi-submit" style="padding:8px 18px;background:#58a6ff;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px;font-weight:600;">解析并添加</button>
+    </div>
+  </div>
 </div>
 
 <div id="main">
@@ -146,29 +179,18 @@ body.fullscreen #sidebar { display: none; }
     <div class="s-card">
       <div class="s-title">当前信号</div>
       <div id="sig-badge" class="signal-badge wait">◉ 等待信号</div>
-      <div class="sub-sigs">
-        <div class="sub-sig"><span class="lbl">破浪 黄点</span><span id="s-po"   class="val off">未触发</span></div>
-        <div class="sub-sig"><span class="lbl">空仓 绿点</span><span id="s-kong" class="val off">未触发</span></div>
-        <div class="sub-sig"><span class="lbl">波段王 多</span><span id="s-bsdm" class="val off">未触发</span></div>
-        <div class="sub-sig"><span class="lbl">波段王 空</span><span id="s-bsdk" class="val off">未触发</span></div>
+      <div class="sub-sigs" style="margin-top:10px">
+        <div class="s-title" style="margin-bottom:6px">做多条件</div>
+        <div class="sub-sig"><span class="lbl">① 黄点 破浪</span><span id="s-po" class="val off">--</span></div>
+        <div class="sub-sig"><span class="lbl">② 波段王红色 K>D</span><span id="s-bsdm" class="val off">--</span></div>
+        <div class="sub-sig"><span class="lbl">③ K > 30</span><span id="s-kgt30" class="val off">-- </span></div>
       </div>
-    </div>
-    <div class="s-card">
-      <div class="s-title">指标数值</div>
-      <div class="metric-row"><span class="lbl">收盘价</span><span id="m-close" class="val">--</span></div>
-      <div class="metric-row"><span class="lbl">QRG 强度</span><span id="m-qrg" class="val">--</span></div>
-      <div class="metric-row"><span class="lbl">K 值</span><span id="m-k" class="val">--</span></div>
-      <div class="metric-row"><span class="lbl">D 值</span><span id="m-d" class="val">--</span></div>
-      <div class="metric-row"><span class="lbl">支撑位</span><span id="m-sup" class="val">--</span></div>
-    </div>
-    <div class="s-card">
-      <div class="s-title">市场数据</div>
-      <div class="metric-row"><span class="lbl">多头占比</span><span id="m-cf"  class="val">--</span></div>
-      <div class="metric-row"><span class="lbl">原油走势</span><span id="m-cmp" class="val">--</span></div>
-    </div>
-    <div class="s-card">
-      <div class="s-title">关键价位</div>
-      <div id="levels-list"></div>
+      <div class="sub-sigs" style="margin-top:12px">
+        <div class="s-title" style="margin-bottom:6px">离场条件</div>
+        <div class="sub-sig"><span class="lbl">① 绿点 空仓</span><span id="s-kong" class="val off">--</span></div>
+        <div class="sub-sig"><span class="lbl">② 波段王绿色 K&lt;D</span><span id="s-bsdk" class="val off">--</span></div>
+        <div class="sub-sig"><span class="lbl">③ K &lt; 80</span><span id="s-klt80" class="val off">--</span></div>
+      </div>
     </div>
     <div class="s-card">
       <div class="s-title">历史信号</div>
@@ -210,6 +232,8 @@ let kChart, bsdChart;
 let candleSeries, volSeries, supportSeries, markerSeries;
 let maSeries = {};
 let bsdBaseSeries;
+// 动态副图：{ id, chart, canvas, meta }
+let subCharts = [];
 let extremeLine10, extremeLine90;
 let activePriceLines = [];
 let viewInitialized = false;
@@ -306,21 +330,201 @@ function initCharts() {
   initResizers();
 }
 
-// ── 时间轴联动 ────────────────────────────────────────
-function syncCharts() {
-  let syncing = false;
-  [kChart, bsdChart].forEach(src => {
-    const others = [kChart, bsdChart].filter(c => c !== src);
-    src.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (syncing || !range) return;
-      syncing = true;
-      others.forEach(c => c.timeScale().setVisibleLogicalRange(range));
-      if (allData) requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
-      syncing = false;
+// ── 时间轴联动（动态，支持任意数量图表）────────────────
+let _syncing = false;
+function getAllCharts() {
+  return [kChart, bsdChart, ...subCharts.map(s => s.chart)].filter(Boolean);
+}
+
+function syncOneChart(src) {
+  src.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (_syncing || !range) return;
+    _syncing = true;
+    getAllCharts().filter(c => c !== src).forEach(c => c.timeScale().setVisibleLogicalRange(range));
+    if (allData) requestAnimationFrame(() => {
+      drawBsdCanvas(allData.indicator_series);
+      subCharts.forEach(s => { if (s.canvas) drawSubCanvas(s, allData.indicator_series); });
     });
+    _syncing = false;
   });
 }
 
+function syncCharts() {
+  syncOneChart(kChart);
+  syncOneChart(bsdChart);
+}
+
+
+// ── 动态添加副图 ──────────────────────────────────────
+function addSubChart(pluginMeta, bars) {
+  const chartsArea = document.getElementById('charts-area');
+  const cw = chartsArea.clientWidth;
+  const id = pluginMeta.id;
+
+  // 避免重复添加
+  if (subCharts.find(s => s.id === id)) return;
+
+  // 分隔条
+  const resizer = document.createElement('div');
+  resizer.className = 'resizer';
+
+  // 图表容器
+  const wrap = document.createElement('div');
+  wrap.id = `wrap-sub-${id}`;
+  wrap.className = 'chart-wrap';
+  wrap.style.height = '22%';
+
+  const label = document.createElement('div');
+  label.className = 'chart-label';
+  label.textContent = pluginMeta.name;
+
+  const legend = document.createElement('div');
+  legend.className = 'chart-legend';
+  legend.id = `legend-sub-${id}`;
+
+  const chartDiv = document.createElement('div');
+  chartDiv.id = `chart-sub-${id}`;
+  chartDiv.style.cssText = 'width:100%;height:100%';
+
+  wrap.appendChild(label);
+  wrap.appendChild(legend);
+  wrap.appendChild(chartDiv);
+  chartsArea.appendChild(resizer);
+  chartsArea.appendChild(wrap);
+
+  // 创建 chart
+  const chart = LightweightCharts.createChart(chartDiv, {
+    ...COMMON, width: cw, height: wrap.clientHeight,
+  });
+
+  // 固定纵轴（如果有 range 设置）
+  const baseSeries = chart.addLineSeries({
+    color: 'transparent', lineWidth: 0,
+    lastValueVisible: false, priceLineVisible: false,
+  });
+
+  // hlines（水平参考线）
+  const hlineSeries = (pluginMeta.hlines || []).map(hl =>
+    chart.addLineSeries({
+      color: hl.color || '#888', lineWidth: hl.width || 1,
+      lastValueVisible: false, priceLineVisible: false,
+    })
+  );
+
+  // 输出线 series（type=line 的）
+  const lineSeries = {};
+  (pluginMeta.outputs || []).filter(o => o.type === 'line').forEach(o => {
+    lineSeries[o.col] = chart.addLineSeries({
+      color: o.color || '#ffffff', lineWidth: o.width || 1,
+      lastValueVisible: false, priceLineVisible: false,
+    });
+  });
+
+  // stickline 用 canvas
+  const hasStick = (pluginMeta.outputs || []).some(o => o.type === 'stickline');
+  let canvas = null;
+  if (hasStick) {
+    canvas = document.createElement('canvas');
+    canvas.className = 'bsd-canvas';
+    wrap.appendChild(canvas);
+  }
+
+  const entry = { id, chart, wrap, baseSeries, hlineSeries, lineSeries, canvas, meta: pluginMeta };
+  subCharts.push(entry);
+
+  // 同步时间轴
+  syncOneChart(chart);
+
+  // 设置分隔条拖拽
+  const prevWrap = resizer.previousElementSibling;
+  setupResizer(resizer, prevWrap, wrap, getAllCharts()[getAllCharts().indexOf(chart) - 1], chart);
+
+  // 渲染数据
+  if (bars) renderSubChart(entry, bars);
+
+  // window resize
+  window.addEventListener('resize', () => {
+    const cw2 = chartsArea.clientWidth;
+    chart.resize(cw2, wrap.clientHeight);
+    if (allData) drawSubCanvas(entry, allData.indicator_series);
+  });
+}
+
+function renderSubChart(entry, bars) {
+  const { chart, baseSeries, hlineSeries, lineSeries, canvas, meta } = entry;
+  if (!bars || !bars.length) return;
+
+  // 固定纵轴
+  const range = meta.range;
+  if (range) {
+    baseSeries.setData([
+      { time: bars[0].time, value: range[0] },
+      { time: bars[bars.length - 1].time, value: range[1] },
+    ]);
+  } else {
+    baseSeries.setData([
+      { time: bars[0].time,              value: 0 },
+      { time: bars[bars.length - 1].time, value: 0 },
+    ]);
+  }
+
+  // hlines
+  (meta.hlines || []).forEach((hl, i) => {
+    hlineSeries[i]?.setData(bars.map(b => ({ time: b.time, value: hl.value })));
+  });
+
+  // 折线
+  Object.entries(lineSeries).forEach(([col, series]) => {
+    const out = (meta.outputs || []).find(o => o.col === col && o.type === 'line');
+    const pts = bars.filter(b => b[col] != null).map(b => ({
+      time: b.time, value: b[col],
+      color: out?.color_rising ? (b[col + 'r'] ? out.color_rising : out.color) : out?.color,
+    }));
+    series.setData(pts);
+  });
+
+  // stickline canvas
+  if (canvas) drawSubCanvas(entry, bars);
+}
+
+function drawSubCanvas(entry, bars) {
+  const { canvas, chart, baseSeries, meta } = entry;
+  if (!canvas) return;
+  const wrap = entry.wrap;
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const stickOut = (meta.outputs || []).find(o => o.type === 'stickline');
+  if (!stickOut) return;
+
+  const col1 = stickOut.col;
+  const col2 = stickOut.col2;
+  const valid = bars.filter(b => b[col1] != null && b[col2] != null);
+  if (valid.length < 2) return;
+
+  const ts = chart.timeScale();
+  const x0 = ts.timeToCoordinate(valid[0].time);
+  const x1 = ts.timeToCoordinate(valid[1].time);
+  const barPx = (x0 != null && x1 != null) ? Math.abs(x1 - x0) : 8;
+  const hw = Math.max(2, barPx * 0.48);
+
+  for (const b of valid) {
+    const x  = ts.timeToCoordinate(b.time);
+    if (x == null) continue;
+    const yK = baseSeries.priceToCoordinate(b[col1]);
+    const yD = baseSeries.priceToCoordinate(b[col2]);
+    if (yK == null || yD == null) continue;
+    const top = Math.min(yK, yD);
+    const ht  = Math.max(2, Math.abs(yK - yD));
+    const bull = b[col1] >= b[col2];
+    ctx.fillStyle = bull ? (stickOut.color_bull || '#CC0000') : (stickOut.color_bear || '#00AA00');
+    ctx.fillRect(x - hw, top, hw * 2, ht);
+    ctx.fillStyle = bull ? 'rgba(255,60,60,0.35)' : 'rgba(0,200,0,0.35)';
+    ctx.fillRect(x - hw - 1, top, hw * 2 + 2, ht);
+  }
+}
 
 // ── Legend ───────────────────────────────────────────
 function setupLegends() {
@@ -455,6 +659,10 @@ function renderAll(data) {
 
   updateHeader(data);
   updateSidebar(data);
+  checkAndNotify(data);
+
+  // 刷新所有动态副图
+  subCharts.forEach(s => renderSubChart(s, bars));
 }
 
 // ── 波段王 canvas 色块柱（STICKLINE K/D 之间，红=多/绿=空）──
@@ -530,57 +738,19 @@ function updateSidebar(data) {
     badge.className = 'signal-badge wait'; badge.textContent = '◉ 等待信号';
   }
 
-  function sv(id, on, onT, offT) {
+  function sv(id, on) {
     const el = document.getElementById(id);
-    el.textContent = on ? onT : offT;
+    el.textContent = on ? '✔' : '✘';
     el.className = 'val ' + (on ? 'on' : 'off');
   }
-  sv('s-po',   sig['破浪_黄点'], '★ 触发', '未触发');
-  sv('s-kong', sig['空仓_绿点'], '★ 触发', '未触发');
-  sv('s-bsdm', sig['波段王_多'], '★ 多头', '未触发');
-  sv('s-bsdk', sig['波段王_空'], '★ 空头', '未触发');
-
-  const qrg = meta.QRG ?? null;
-  const kv  = meta.K   ?? null;
-  document.getElementById('m-close').textContent = meta.close?.toFixed(0) ?? '--';
-  const qEl = document.getElementById('m-qrg');
-  qEl.textContent = qrg ?? '--';
-  qEl.className = 'val ' + (qrg >= 0 ? 'bull' : 'bear');
-  const kEl = document.getElementById('m-k');
-  kEl.textContent = kv ?? '--';
-  kEl.className = 'val ' + (kv >= 50 ? 'bull' : 'bear');
-  document.getElementById('m-d').textContent   = meta.D    ?? '--';
-  document.getElementById('m-sup').textContent = meta['支撑'] ?? '--';
-
-  // 资金流：使用 bull_ratio 字段
-  const cf = data.capital_flow;
-  const cfEl = document.getElementById('m-cf');
-  if (cf?.bull_ratio != null) {
-    cfEl.textContent = cf.bull_ratio.toFixed(1) + '% · ' + (cf.signal || '');
-    cfEl.className = 'val ' + (cf.bull_ratio >= 50 ? 'bull' : 'bear');
-  } else {
-    cfEl.textContent = '--';
-  }
-
-  // 原油对比：使用 divergence + palm_5d_chg 字段
-  const cmp = data.comparison;
-  const cmpEl = document.getElementById('m-cmp');
-  if (cmp?.divergence != null) {
-    const sign = cmp.palm_5d_chg >= 0 ? '+' : '';
-    cmpEl.textContent = `${cmp.divergence} ${sign}${cmp.palm_5d_chg?.toFixed(1)}%`;
-    cmpEl.className = 'val ' + (cmp.palm_5d_chg >= 0 ? 'bull' : 'bear');
-  } else {
-    cmpEl.textContent = '--';
-  }
-
-  const lvList = document.getElementById('levels-list');
-  lvList.innerHTML = '';
-  (data.levels || []).slice(0, 8).forEach(lv => {
-    const r = document.createElement('div');
-    r.className = 'level-row' + (lv.current ? ' cur' : '');
-    r.innerHTML = `<span class="lv-name">${lv.name}</span><span class="lv-val">${lv.value?.toFixed(0)}</span>`;
-    lvList.appendChild(r);
-  });
+  const kv = meta.K ?? 0;
+  const dv = meta.D ?? 0;
+  sv('s-po',    sig['破浪_黄点']);
+  sv('s-bsdm',  kv >= dv && kv > 0);
+  sv('s-kgt30', kv > 30);
+  sv('s-kong',  sig['空仓_绿点']);
+  sv('s-bsdk',  kv <= dv && kv > 0);
+  sv('s-klt80', kv < 80);
 
   const histList = document.getElementById('hist-list');
   histList.innerHTML = '';
@@ -596,25 +766,33 @@ function updateSidebar(data) {
 // ── 可拖拽分隔条 ─────────────────────────────────────
 function initResizers() {
   setupResizer('res1', 'wrap-kline', 'wrap-bsd', kChart, bsdChart);
+  // 动态副图的分隔条在 addSubChart 里单独注册
 }
 
-function setupResizer(resId, topId, botId, topChart, botChart) {
-  const res = document.getElementById(resId);
+function setupResizer(resEl, topEl, botEl, topChart, botChart) {
+  // 支持传 id 字符串或直接传 DOM 元素
+  if (typeof resEl === 'string') resEl = document.getElementById(resEl);
+  if (typeof topEl === 'string') topEl = document.getElementById(topEl);
+  if (typeof botEl === 'string') botEl = document.getElementById(botEl);
+
   let startY, startTop, startBot;
-  res.addEventListener('mousedown', e => {
+  resEl.addEventListener('mousedown', e => {
     startY = e.clientY;
-    startTop = document.getElementById(topId).clientHeight;
-    startBot = document.getElementById(botId).clientHeight;
+    startTop = topEl.clientHeight;
+    startBot = botEl.clientHeight;
+    const cw = document.getElementById('charts-area').clientWidth;
     const onMove = e2 => {
       const dy = e2.clientY - startY;
       const newTop = Math.max(80, startTop + dy);
       const newBot = Math.max(60, startBot - dy);
-      document.getElementById(topId).style.height = newTop + 'px';
-      document.getElementById(botId).style.height = newBot + 'px';
-      const cw = document.getElementById('charts-area').clientWidth;
-      topChart.resize(cw, newTop);
-      botChart.resize(cw, newBot);
-      if (allData) requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
+      topEl.style.height = newTop + 'px';
+      botEl.style.height = newBot + 'px';
+      topChart?.resize(cw, newTop);
+      botChart?.resize(cw, newBot);
+      if (allData) requestAnimationFrame(() => {
+        drawBsdCanvas(allData.indicator_series);
+        subCharts.forEach(s => drawSubCanvas(s, allData.indicator_series));
+      });
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
@@ -847,11 +1025,133 @@ window.addEventListener('resize', () => {
   if (allData) drawBsdCanvas(allData.indicator_series);
 });
 
+// ── 桌面通知 ─────────────────────────────────────────
+// 记录上次已通知的信号，避免同一根K线重复弹
+let _lastNotified = { symbol: null, time: null, type: null };
+
+function initNotifications() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function checkAndNotify(data) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const sig  = data.signals || {};
+  const meta = data.meta    || {};
+  const bars = data.indicator_series || [];
+  const lastBar = bars[bars.length - 1];
+  if (!lastBar) return;
+
+  const key = { symbol: data.symbol, time: lastBar.time };
+
+  if (sig['做多'] && (
+    _lastNotified.symbol !== key.symbol ||
+    _lastNotified.time   !== key.time   ||
+    _lastNotified.type   !== '做多'
+  )) {
+    _lastNotified = { ...key, type: '做多' };
+    new Notification(`▲ 做多信号 — ${data.name}`, {
+      body: `${meta.datetime?.slice(0,16) || ''}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+      icon: '',
+      tag:  `${data.symbol}-long`,
+    });
+  }
+
+  if (sig['离场'] && (
+    _lastNotified.symbol !== key.symbol ||
+    _lastNotified.time   !== key.time   ||
+    _lastNotified.type   !== '离场'
+  )) {
+    _lastNotified = { ...key, type: '离场' };
+    new Notification(`▼ 离场信号 — ${data.name}`, {
+      body: `${meta.datetime?.slice(0,16) || ''}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+      icon: '',
+      tag:  `${data.symbol}-exit`,
+    });
+  }
+}
+
 setInterval(loadData, 60000);
+
+// ── 导入公式模态框 ────────────────────────────────────
+const modalEl  = document.getElementById('modal-import');
+const fiError  = document.getElementById('fi-error');
+
+function openImportModal() {
+  modalEl.style.display = 'flex';
+  document.getElementById('fi-name').focus();
+}
+function closeImportModal() {
+  modalEl.style.display = 'none';
+  fiError.style.display = 'none';
+}
+
+document.getElementById('btn-import').addEventListener('click', openImportModal);
+document.getElementById('modal-close').addEventListener('click', closeImportModal);
+document.getElementById('fi-cancel').addEventListener('click', closeImportModal);
+modalEl.addEventListener('click', e => { if (e.target === modalEl) closeImportModal(); });
+
+document.getElementById('fi-submit').addEventListener('click', async () => {
+  const name   = document.getElementById('fi-name').value.trim();
+  const source = document.getElementById('fi-source').value.trim();
+  const panel  = document.getElementById('fi-panel').value;
+  fiError.style.display = 'none';
+
+  if (!name || !source) {
+    fiError.textContent = '请填写指标名称和公式代码';
+    fiError.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('fi-submit');
+  btn.textContent = '解析中…';
+  btn.disabled = true;
+
+  try {
+    const res  = await fetch('/api/import_formula', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, source, panel }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    closeImportModal();
+    document.getElementById('fi-name').value   = '';
+    document.getElementById('fi-source').value = '';
+    // 拉取插件完整 meta 并立即渲染新副图
+    const metaRes = await fetch('/api/indicators');
+    const allMetas = await metaRes.json();
+    const newMeta = allMetas.find(m => m.id === data.id);
+    if (newMeta && newMeta.panel === 'sub' && allData) {
+      addSubChart(newMeta, allData.indicator_series);
+    } else if (newMeta && newMeta.panel === 'main') {
+      // 主图插件：提示刷新（主图复杂，暂不动态加）
+      if (confirm(`✓ 主图指标「${data.name}」已添加，刷新页面后生效？`)) location.reload();
+    }
+  } catch(e) {
+    fiError.textContent = e.message;
+    fiError.style.display = 'block';
+  } finally {
+    btn.textContent = '解析并添加';
+    btn.disabled = false;
+  }
+});
 
 // ── 启动 ─────────────────────────────────────────────
 initCharts();
 initRightAnchorZoom();
+initNotifications();
+
+// 加载已保存的副图插件（排除内置的 bsd_wang/main_signal）
+const BUILTIN_IDS = new Set(['bsd_wang', 'main_signal']);
+fetch('/api/indicators').then(r => r.json()).then(metas => {
+  metas.filter(m => m.panel === 'sub' && !BUILTIN_IDS.has(m.id))
+       .forEach(m => addSubChart(m, allData?.indicator_series));
+}).catch(() => {});
+
 loadData();
 </script>
 </body>

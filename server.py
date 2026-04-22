@@ -373,6 +373,58 @@ def api_resolve():
     except Exception as e:
         return jsonify({"error": f"合约 {symbol} 不存在: {e}"}), 404
 
+@app.route("/api/indicators")
+def api_indicators():
+    """列出所有已加载的指标插件"""
+    import indicators_pkg as ipkg
+    result = []
+    for name, mod in ipkg.get_all().items():
+        meta = mod.META.copy()
+        meta.pop('outputs', None)   # 输出列太长，不传给前端列表
+        result.append(meta)
+    return jsonify(result)
+
+
+@app.route("/api/import_formula", methods=["POST"])
+def api_import_formula():
+    """
+    接收 TDX 公式文本，解析后生成插件文件并热加载。
+    POST body JSON: { "name": "指标名", "source": "TDX公式...", "panel": "sub" }
+    """
+    import re, indicators_pkg as ipkg
+    from tdx_parser import TDXParser
+
+    body = request.get_json(force=True)
+    name   = body.get('name', '').strip()
+    source = body.get('source', '').strip()
+    panel  = body.get('panel', 'sub')
+
+    if not name or not source:
+        return jsonify({"error": "name 和 source 不能为空"}), 400
+
+    # 生成合法文件名 id
+    plugin_id = re.sub(r'[^a-z0-9_]', '_', name.lower())[:32]
+    plugin_id = plugin_id.strip('_') or 'custom'
+
+    try:
+        parser = TDXParser(source)
+        code   = parser.to_plugin_source(plugin_id, name, panel)
+    except Exception as e:
+        return jsonify({"error": f"公式解析失败: {e}"}), 400
+
+    # 写入插件文件
+    plugin_dir  = os.path.join(os.path.dirname(__file__), 'indicators_pkg')
+    plugin_path = os.path.join(plugin_dir, f'{plugin_id}.py')
+    with open(plugin_path, 'w', encoding='utf-8') as f:
+        f.write(code)
+
+    # 热加载
+    ipkg.reload_all()
+
+    return jsonify({"ok": True, "id": plugin_id, "name": name,
+                    "outputs": parser.build_meta_outputs()})
+
+
 @app.route("/")
 def index():
     return send_from_directory("dashboard", "index.html")
