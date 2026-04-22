@@ -1083,13 +1083,12 @@ const _watchlistNotified = {};
 async function scanAllWatchlist() {
   const list = loadWatchlist();
   for (const item of list) {
-    // 当前已在图表显示的品种跳过（loadData('update') 已处理）
-    if (item.symbol === currentSymbol) continue;
     try {
-      const res = await fetch(`${API}?period=${currentPeriod}&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
+      // 信号判断固定用15分钟，不受图表当前周期影响
+      const res = await fetch(`${API}?period=15&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
       const data = await res.json();
       if (data.error) continue;
-      checkAndNotify(data, item.symbol);
+      checkAndNotify(data);
     } catch(e) {}
   }
 }
