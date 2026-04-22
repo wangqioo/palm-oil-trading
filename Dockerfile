@@ -15,6 +15,6 @@ COPY . .
 # 建立必要目录
 RUN mkdir -p logs data knowledge_base/signals dashboard
 
-EXPOSE 8080
+EXPOSE 8877
 
 CMD ["python", "server.py"]

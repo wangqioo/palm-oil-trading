@@ -1,147 +1,194 @@
-# 棕榈油期货交易信号系统
+# 期货交易看板 v3.0
 
-基于 TDX（通达信）指标公式的棕榈油期货自动信号检测系统，配备专业级 K 线看板。
+基于平安证券慧赢风格的期货实时交易看板，支持多品种自选、TDX公式导入、桌面信号推送。
+
+![看板截图](screenshot-20260423-024648.png)
 
 ---
 
 ## 功能概览
 
-### 信号检测
-
-系统重现了平安证券慧赢平台中的两套指标公式：
-
-**主图指标（QRG 强度）**
-
-- 多条 EMA 级联计算 QRG 强度分（-50 ~ +50）
-- **破浪信号（黄点）**：QRG 由负转正，看多入场
-- **空仓信号（绿点）**：QRG 由正转负，看空离场
-
-**副图指标（波段王）**
-
-- Stochastic 风格的 K/D 振荡器（0 ~ 100）
-- K >= D 且 K > 30：多头结构
-- K <= D 且 K < 80：空头结构
-
-**组合触发条件（15分钟K线）**
-
-| 信号 | 条件 |
-|------|------|
-| ▲ 做多 | 主图破浪（黄点）+ 波段王 K > 30 且 K >= D |
-| ▼ 离场 | 主图空仓（绿点）+ 波段王 K < 80 且 K <= D |
+- **多品种自选**：搜索添加任意期货合约（连续主力或具体月份合约），支持本地持久化
+- **实时K线图**：蜡烛图 + 成交量 + 五级叠加均线（M1~M5），与慧赢配色一致
+- **主图信号**：黄点（破浪/做多）、绿点（空仓/离场），标记在K线上，不被任何线遮挡
+- **波段王副图**：K/D动能色块柱（红=多头/绿=空头）+ 90参考线
+- **信号面板**：实时显示6项条件是否满足（做多3条 + 离场3条），✔/✘逐项标注
+- **历史信号**：最近10次做多/离场信号记录
+- **桌面通知**：信号触发时弹出系统通知（需授权）
+- **全自选扫描**：每60秒静默扫描所有自选品种，非当前展示品种也能触发通知
+- **TDX公式导入**：粘贴慧赢/通达信公式，自动解析生成副图插件并热加载
+- **无闪烁刷新**：增量更新只推送最后3根K线，图表不重绘不跳动
+- **右锚缩放**：滚轮以最新K线为固定轴缩放，与慧赢操作习惯一致
 
 ---
 
-### 可视化看板
+## 信号触发逻辑
 
-使用 [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts) 构建的专业交易看板：
+### 做多信号（三条件同时满足）
+1. 主图出现**黄点**（QRG 上穿 -10，破浪信号）
+2. 波段王 **K > 30**
+3. 波段王 **K ≥ D**（多头柱，红色）
 
-- **K 线图**：蜡烛图 + 成交量 + 信号箭头标记 + 支撑压力位虚线
-- **波段王**：K/D 色块填充（红色=多头，绿色=空头）+ K/D 折线
-- **QRG 强度**：正负柱状图
-- OHLC 图例（鼠标悬停实时显示）
-- 周期切换：1分 / 15分 / 60分 / 日线
-- 三图十字线联动 + 时间轴同步
-- 面板高度可拖拽调整
-- 全屏模式
-- 每 60 秒自动刷新
+### 离场信号（三条件同时满足）
+1. 主图出现**绿点**（QRG 跌至 -50，空仓信号）
+2. 波段王 **K < 80**
+3. 波段王 **K ≤ D**（空头柱，绿色）
 
 ---
 
-## 技术栈
+## 快速启动
 
-| 组件 | 技术 |
-|------|------|
-| 数据源 | [AkShare](https://github.com/akfamily/akshare) 新浪财经期货接口 |
-| 后端 | Python + Flask |
-| 前端 | TradingView Lightweight Charts v4 |
-| 部署 | Docker + Docker Compose |
-
----
-
-## 快速部署
-
-### 前置要求
-
-- Docker & Docker Compose
-- 公网服务器（或本地运行）
-
-### 一键启动
+### 本地运行
 
 ```bash
 git clone https://github.com/wangqioo/palm-oil-trading.git
 cd palm-oil-trading
-
-# 创建必要目录
-mkdir -p logs data knowledge_base/signals
-
-docker compose up -d
+pip install flask flask-cors pandas akshare
+python server.py
+# 访问 http://localhost:8877
 ```
 
-服务启动后访问：`http://<服务器IP>:8877`
+### Docker 部署
+
+```bash
+git clone https://github.com/wangqioo/palm-oil-trading.git
+cd palm-oil-trading
+mkdir -p logs data knowledge_base/signals
+docker compose up -d --build
+# 访问 http://服务器IP:8877
+```
 
 ---
 
 ## 项目结构
 
 ```
-palm-oil-trading/
-├── server.py            # Flask API 服务
-├── indicators.py        # TDX 指标 Python 重现
-├── data_fetcher.py      # AkShare 数据获取
-├── signal_monitor.py    # 实时信号监控
-├── daily_report.py      # 每日早报生成
-├── config.py            # 配置文件
+.
+├── server.py              # Flask API 服务（数据获取 + 指标计算 + 路由）
+├── indicators.py          # 核心指标计算（主图信号 + 波段王）
+├── data_fetcher.py        # 辅助计算（支撑压力位 + 资金流向）
+├── signal_monitor.py      # 独立信号监控脚本（命令行运行）
+├── daily_report.py        # 每日早报生成脚本
 ├── dashboard/
-│   └── index.html       # 专业 K 线看板
-├── Dockerfile
-└── docker-compose.yml
+│   └── index.html         # 前端单页应用（所有UI逻辑）
+├── indicators_pkg/        # 指标插件系统
+│   ├── __init__.py        # 插件自动发现 + 热加载
+│   ├── main_signal.py     # 主图信号插件（M1~M5均线 + 黄绿点）
+│   ├── bsd_wang.py        # 波段王插件（K/D色块柱）
+│   └── *.py               # 用户通过「导入公式」自动生成的插件
+├── tdx_parser/
+│   ├── parser.py          # TDX 公式解析器（赋值/DRAWTEXT/STICKLINE）
+│   └── functions.py       # TDX 内置函数库（EMA/MA/SMA/REF/HHV/LLV等）
+├── data/                  # 日线数据缓存（gitignore，自动生成）
+├── docker-compose.yml
+└── Dockerfile
 ```
 
 ---
 
 ## API 接口
 
-### `GET /api/data`
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/data` | GET | 获取K线 + 指标数据。参数：`symbol`（如P0）、`period`（1/5/15/30/60/daily）、`mode`（full/update） |
+| `/api/symbols` | GET | 获取默认自选品种列表 |
+| `/api/search?q=铜` | GET | 搜索期货品种名称或代码前缀 |
+| `/api/resolve?symbol=RB2510` | GET | 验证合约代码是否存在并返回名称 |
+| `/api/indicators` | GET | 列出所有已加载指标插件 |
+| `/api/import_formula` | POST | 导入TDX公式，body: `{"name":"","source":"","panel":"sub"}` |
 
-获取当前合约数据、指标序列和信号状态。
+---
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `period` | 周期（1/5/15/30/60/daily） | `15` |
+## 默认自选品种
 
-**返回字段：**
+| 代码 | 品种 | 说明 |
+|------|------|------|
+| P0 | 棕榈油主力 | 大连商品交易所 |
+| AG0 | 白银主力 | 上海期货交易所 |
+| BC0 | 国际铜主力 | 上海国际能源交易中心 |
+| CU0 | 铜主力 | 上海期货交易所 |
+| SA0 | 纯碱主力 | 郑州商品交易所 |
 
-```json
-{
-  "contract": "P2609",
-  "updated": "2026-04-16 14:15:00",
-  "signals": {
-    "做多": false,
-    "离场": false
-  },
-  "indicator_series": [
-    {
-      "time": 1744780800,
-      "open": 8600, "high": 8650, "low": 8580, "close": 8630,
-      "volume": 12500,
-      "K": 45.2, "D": 38.6, "QRG": 12.4,
-      "po": false, "kong": false
-    }
-  ],
-  "levels": [...],
-  "history": [...]
+> 全部使用新浪**主力连续合约**格式（品种前缀+0），永远跟踪当前主力，无需手动换月。
+
+---
+
+## TDX公式导入
+
+1. 点击顶部**「导入公式」**按钮
+2. 填写指标名称，选择「副图」或「主图」
+3. 粘贴慧赢/通达信公式代码，点击「解析并添加」
+4. 副图立即出现在图表中，无需刷新页面；主图指标需刷新后生效
+
+**支持的语法：**
+
+```
+{ 注释 }
+VAR1:=EMA(CLOSE,13);          { 中间变量（不绘图） }
+MYLINE,VAR1,COLORRED,2;       { 输出折线：名称,表达式,颜色,粗细 }
+DRAWTEXT(CROSS(K,D),LOW,'买'); { K线标注文字 }
+STICKLINE(K>=D,K,D,2,0),COLORRED; { 色块柱 }
+```
+
+**支持的内置函数：**
+EMA、MA、SMA、REF、HHV、LLV、CROSS、IF、ABS、MAX、MIN、STD、SUM、COUNT、EVERY、EXIST、HHVBARS、LLVBARS、SLOPE
+
+---
+
+## 插件开发
+
+在 `indicators_pkg/` 下新建 `.py` 文件，服务启动时自动加载：
+
+```python
+import pandas as pd
+
+META = {
+    "name":    "我的指标",
+    "id":      "my_indicator",   # 唯一ID，与文件名一致
+    "panel":   "sub",            # "main" 主图 / "sub" 副图
+    "outputs": [
+        {"col": "LINE1", "type": "line",   "color": "#FF0000", "width": 2},
+        {"col": "SIG",   "type": "marker", "position": "belowBar",
+         "color": "#FFD700", "shape": "circle", "size": 1.2},
+    ],
+    "hlines": [
+        {"value": 80, "color": "#888888", "width": 1},
+    ],
 }
+
+def compute(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    result["LINE1"] = df["close"].ewm(span=13).mean()
+    result["SIG"]   = result["LINE1"] > result["LINE1"].shift(1)
+    return result
 ```
 
 ---
 
-## 历史信号回测
+## 版本历史
 
-| 日期 | 信号 | 价格 |
-|------|------|------|
-| 2026-01-07 | ▲ 做多 | 8452 |
-| 2026-02-11 | ▼ 离场 | 8886 |
-| 2026-04-10 | ▼ 离场 | 9621 |
+### v3.0（当前）
+- 切换为主力连续合约（X0格式），数据永不过期
+- 全面代码审查：删除所有死代码（`get_warmup_data`、`resample_weekly`等）
+- 修复 `rising()` 闭包 bug（for循环内变量捕获问题）
+- 修复 Docker 配置：端口 8080→8877，补全 volume 挂载
+- 清理 `data_fetcher.py`，删除不再调用的数据获取函数
+- 全自选品种静默扫描信号（每60秒，含非当前展示品种）
+- 增量刷新（`mode=update`），图表无闪烁
+
+### v2.0
+- 指标插件系统（`indicators_pkg/`），支持热加载
+- TDX/慧赢公式解析器（`tdx_parser/`）
+- 「导入公式」模态框，副图动态生成
+- 桌面 Notification 信号推送（含去重）
+- 自选股面板：搜索、添加、删除，localStorage持久化
+- 右锚缩放（最新K线固定）
+
+### v1.0
+- 多品种期货交易看板
+- 主图信号（黄点/绿点）+ 波段王副图
+- K/D色块柱 + 支撑压力位
+- 三图十字线联动
 
 ---
 

@@ -225,8 +225,8 @@ body.fullscreen #sidebar { display: none; }
 <script>
 const API = '/api/data';
 let currentPeriod = '15';
-let currentSymbol = 'P2609';
-let currentSymbolName = '棕榈油2609';
+let currentSymbol = 'P0';
+let currentSymbolName = '棕榈油主力';
 let allData = null;
 let kChart, bsdChart;
 let candleSeries, volSeries, supportSeries, markerSeries;
@@ -553,19 +553,62 @@ function setupLegends() {
 }
 
 // ── 数据加载 ─────────────────────────────────────────
-async function loadData() {
-  document.getElementById('loading').classList.remove('hidden');
+async function loadData(mode = 'full') {
+  const url = `${API}?period=${currentPeriod}&symbol=${currentSymbol}&name=${encodeURIComponent(currentSymbolName)}&mode=${mode}`;
+  if (mode === 'full') {
+    document.getElementById('loading').classList.remove('hidden');
+  }
   try {
-    const res = await fetch(`${API}?period=${currentPeriod}&symbol=${currentSymbol}&name=${encodeURIComponent(currentSymbolName)}`);
+    const res = await fetch(url);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    allData = data;
-    renderAll(data);
+    if (mode === 'update' && allData) {
+      // 增量刷新：只更新最后几根K线和侧边栏信号，不重绘整个图表
+      updateBars(data.indicator_series || []);
+      updateHeader(data);
+      updateSidebar(data);
+      checkAndNotify(data);
+      // 把新bar合并进allData供canvas使用
+      const newBars = data.indicator_series || [];
+      newBars.forEach(nb => {
+        const idx = allData.indicator_series.findIndex(b => b.time === nb.time);
+        if (idx >= 0) allData.indicator_series[idx] = nb;
+        else allData.indicator_series.push(nb);
+      });
+    } else {
+      allData = data;
+      renderAll(data);
+    }
   } catch(e) {
-    document.getElementById('loading').innerHTML = `<span style="color:#ef5350">加载失败: ${e.message}</span>`;
-    return;
+    if (mode === 'full') {
+      document.getElementById('loading').innerHTML = `<span style="color:#ef5350">加载失败: ${e.message}</span>`;
+      return;
+    }
   }
-  document.getElementById('loading').classList.add('hidden');
+  if (mode === 'full') {
+    document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+// 增量更新：只用 series.update() 更新最后几根，不 setData
+function updateBars(bars) {
+  bars.forEach(b => {
+    if (b.open != null) {
+      candleSeries.update({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
+    }
+    volSeries.update({ time: b.time, value: b.volume || 0,
+      color: (b.close >= b.open) ? 'rgba(239,83,80,0.45)' : 'rgba(38,166,154,0.45)' });
+    if (b['支撑'] != null) supportSeries.update({ time: b.time, value: b['支撑'] });
+    ['M1','M2','M3','M4','M5'].forEach(name => {
+      if (b[name] != null) maSeries[name].update({
+        time: b.time, value: b[name],
+        color: b[`${name}r`] ? '#FF00FF' : '#FFD700',
+      });
+    });
+    markerSeries.update({ time: b.time, value: b.close });
+  });
+  // canvas 重绘波段王（轻量）
+  requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
 }
 
 function renderAll(data) {
@@ -850,16 +893,24 @@ document.querySelectorAll('.period-btn').forEach(btn => {
 
 // ── 自选股管理 ────────────────────────────────────────
 const DEFAULT_WATCHLIST = [
-  { symbol: 'BC2505', name: '国际铜2505' },
-  { symbol: 'AG2606', name: '白银2606' },
-  { symbol: 'P2609',  name: '棕榈油2609' },
-  { symbol: 'CU2505', name: '铜2505' },
-  { symbol: 'SA2509', name: '纯碱2509' },
+  { symbol: 'BC0', name: '国际铜主力' },
+  { symbol: 'AG0', name: '白银主力' },
+  { symbol: 'P0',  name: '棕榈油主力' },
+  { symbol: 'CU0', name: '铜主力' },
+  { symbol: 'SA0', name: '纯碱主力' },
 ];
 
+const WATCHLIST_VERSION = '3';
 function loadWatchlist() {
-  try { return JSON.parse(localStorage.getItem('watchlist')) || DEFAULT_WATCHLIST; }
-  catch { return DEFAULT_WATCHLIST; }
+  try {
+    // 版本不匹配时重置为默认（合约换月）
+    if (localStorage.getItem('watchlist_ver') !== WATCHLIST_VERSION) {
+      localStorage.setItem('watchlist_ver', WATCHLIST_VERSION);
+      localStorage.removeItem('watchlist');
+      return DEFAULT_WATCHLIST;
+    }
+    return JSON.parse(localStorage.getItem('watchlist')) || DEFAULT_WATCHLIST;
+  } catch { return DEFAULT_WATCHLIST; }
 }
 
 function saveWatchlist(list) {
@@ -1025,9 +1076,25 @@ window.addEventListener('resize', () => {
   if (allData) drawBsdCanvas(allData.indicator_series);
 });
 
+// ── 全自选扫描 ────────────────────────────────────────
+// 记录每个品种上次通知的状态，避免重复弹
+const _watchlistNotified = {};
+
+async function scanAllWatchlist() {
+  const list = loadWatchlist();
+  for (const item of list) {
+    // 当前已在图表显示的品种跳过（loadData('update') 已处理）
+    if (item.symbol === currentSymbol) continue;
+    try {
+      const res = await fetch(`${API}?period=${currentPeriod}&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
+      const data = await res.json();
+      if (data.error) continue;
+      checkAndNotify(data, item.symbol);
+    } catch(e) {}
+  }
+}
+
 // ── 桌面通知 ─────────────────────────────────────────
-// 记录上次已通知的信号，避免同一根K线重复弹
-let _lastNotified = { symbol: null, time: null, type: null };
 
 function initNotifications() {
   if (!('Notification' in window)) return;
@@ -1040,40 +1107,34 @@ function checkAndNotify(data) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const sig  = data.signals || {};
   const meta = data.meta    || {};
-  const bars = data.indicator_series || [];
-  const lastBar = bars[bars.length - 1];
-  if (!lastBar) return;
+  const sym  = data.symbol;
+  const time = meta.datetime || '';
 
-  const key = { symbol: data.symbol, time: lastBar.time };
+  if (!_watchlistNotified[sym]) _watchlistNotified[sym] = {};
+  const prev = _watchlistNotified[sym];
 
-  if (sig['做多'] && (
-    _lastNotified.symbol !== key.symbol ||
-    _lastNotified.time   !== key.time   ||
-    _lastNotified.type   !== '做多'
-  )) {
-    _lastNotified = { ...key, type: '做多' };
+  if (sig['做多'] && !(prev.type === '做多' && prev.time === time)) {
+    prev.type = '做多'; prev.time = time;
     new Notification(`▲ 做多信号 — ${data.name}`, {
-      body: `${meta.datetime?.slice(0,16) || ''}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-      icon: '',
-      tag:  `${data.symbol}-long`,
+      body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+      tag:  `${sym}-long`,
     });
   }
 
-  if (sig['离场'] && (
-    _lastNotified.symbol !== key.symbol ||
-    _lastNotified.time   !== key.time   ||
-    _lastNotified.type   !== '离场'
-  )) {
-    _lastNotified = { ...key, type: '离场' };
+  if (sig['离场'] && !(prev.type === '离场' && prev.time === time)) {
+    prev.type = '离场'; prev.time = time;
     new Notification(`▼ 离场信号 — ${data.name}`, {
-      body: `${meta.datetime?.slice(0,16) || ''}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-      icon: '',
-      tag:  `${data.symbol}-exit`,
+      body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+      tag:  `${sym}-exit`,
     });
   }
 }
 
-setInterval(loadData, 60000);
+// 定时刷新：当前品种增量更新图表 + 所有自选品种静默检测信号
+setInterval(() => {
+  loadData('update');
+  scanAllWatchlist();
+}, 60000);
 
 // ── 导入公式模态框 ────────────────────────────────────
 const modalEl  = document.getElementById('modal-import');

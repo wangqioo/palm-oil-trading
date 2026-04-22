@@ -14,59 +14,13 @@ CORS(app)
 
 PERIOD_MAP = {'1': '1', '5': '5', '15': '15', '30': '30', '60': '60'}
 
-# ── 品种配置表 ────────────────────────────────────────────────────
-# sina_code: 新浪财经分钟线代码（小写）
-# daily_code: 新浪财经日线代码
-# warmup_codes: 历史合约列表（早→新），用于指标预热
-# name: 显示名称
+# 使用新浪主力连续合约（品种前缀+0），永远跟踪当前主力，无需换月维护
 SYMBOLS = {
-    'P2609': {
-        'name': '棕榈油2609', 'type': 'futures',
-        'sina_code': 'p2609',
-        'daily_code': 'P2609',
-        'warmup_codes': [
-            'P1905','P1909','P2001','P2005','P2009',
-            'P2101','P2105','P2109','P2201','P2205','P2209',
-            'P2301','P2305','P2309','P2401','P2405','P2409',
-            'P2501','P2505','P2509','P2601','P2605','P2609',
-        ],
-    },
-    'AG2606': {
-        'name': '白银2606', 'type': 'futures',
-        'sina_code': 'ag2606',
-        'daily_code': 'AG2606',
-        'warmup_codes': [
-            'AG2206','AG2209','AG2212','AG2303','AG2306','AG2309','AG2312',
-            'AG2403','AG2406','AG2409','AG2412','AG2503','AG2506','AG2509','AG2512',
-            'AG2603','AG2606',
-        ],
-    },
-    'BC2505': {
-        'name': '国际铜2505', 'type': 'futures',
-        'sina_code': 'bc2505',
-        'daily_code': 'BC2505',
-        'warmup_codes': ['BC2209','BC2212','BC2303','BC2306','BC2309','BC2312',
-                         'BC2403','BC2406','BC2409','BC2412','BC2503','BC2505'],
-    },
-    'CU2505': {
-        'name': '铜2505', 'type': 'futures',
-        'sina_code': 'cu2505',
-        'daily_code': 'CU2505',
-        'warmup_codes': [
-            'CU2006','CU2009','CU2012','CU2103','CU2106','CU2109','CU2112',
-            'CU2203','CU2206','CU2209','CU2212','CU2303','CU2306','CU2309','CU2312',
-            'CU2403','CU2406','CU2409','CU2412','CU2503','CU2505',
-        ],
-    },
-    'SA2509': {
-        'name': '纯碱2509', 'type': 'futures',
-        'sina_code': 'sa2509',
-        'daily_code': 'SA2509',
-        'warmup_codes': [
-            'SA2101','SA2105','SA2109','SA2201','SA2205','SA2209','SA2301',
-            'SA2305','SA2309','SA2401','SA2405','SA2409','SA2501','SA2505','SA2509',
-        ],
-    },
+    'P0':  {'name': '棕榈油主力',  'sina_code': 'P0',  'daily_code': 'P0'},
+    'AG0': {'name': '白银主力',    'sina_code': 'AG0', 'daily_code': 'AG0'},
+    'BC0': {'name': '国际铜主力',  'sina_code': 'BC0', 'daily_code': 'BC0'},
+    'CU0': {'name': '铜主力',      'sina_code': 'CU0', 'daily_code': 'CU0'},
+    'SA0': {'name': '纯碱主力',    'sina_code': 'SA0', 'daily_code': 'SA0'},
 }
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -134,40 +88,6 @@ def get_daily_data(symbol_cfg):
         print(f"{code} 日线失败: {e}，用缓存")
         return _load_cache(cache_key)
 
-def get_warmup_data(symbol_cfg):
-    import akshare as ak
-    codes = symbol_cfg.get('warmup_codes', [])
-    cache_key = f"warmup_{symbol_cfg['daily_code']}"
-    cached = _load_cache(cache_key)
-    if cached is not None and len(cached) > 0:
-        return cached
-    frames = []
-    for c in codes:
-        try:
-            df = ak.futures_zh_daily_sina(symbol=c)
-            if df is not None and not df.empty:
-                df.columns = [c2.lower() for c2 in df.columns]
-                df["date"] = pd.to_datetime(df["date"])
-                frames.append(df)
-        except Exception:
-            pass
-    if not frames: return None
-    combined = pd.concat(frames, ignore_index=True)
-    combined = combined.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
-    _save_cache(cache_key, combined)
-    print(f"预热({symbol_cfg['daily_code']}): {len(combined)} 条")
-    return combined
-
-def resample_weekly(df):
-    df = df.copy().set_index('date')
-    w = df.resample('W').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna(subset=['open'])
-    w.index = w.index - pd.tseries.frequencies.to_offset('6D')
-    return w.reset_index().rename(columns={'index':'date'})
-
-def resample_monthly(df):
-    df = df.copy().set_index('date')
-    m = df.resample('MS').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna(subset=['open'])
-    return m.reset_index().rename(columns={'index':'date'})
 
 # ── 核心数据计算 ──────────────────────────────────────────────────
 
@@ -180,49 +100,28 @@ def get_data(symbol='P2609', period='15', name=None):
     if sym is None:
         sym = {
             'name': name or symbol,
-            'sina_code': symbol.lower(),
+            'sina_code': symbol,   # 新浪接口大小写均可
             'daily_code': symbol,
-            'warmup_codes': [],
         }
 
-    is_minute = str(period) not in ('daily', 'weekly', 'monthly')
-    display_limit = 99999
+    is_minute = str(period) not in ('daily',)
 
-    # 获取展示数据和预热数据
     daily = get_daily_data(sym)
     if is_minute:
         display_df = get_minute_data(sym['sina_code'], period)
-        warmup_df = None
-    elif period == 'daily':
+    else:
         display_df = daily
-        warmup_df = get_warmup_data(sym)
-    elif period == 'weekly':
-        display_df = resample_weekly(daily) if daily is not None else None
-        wu = get_warmup_data(sym)
-        warmup_df = resample_weekly(wu) if wu is not None else None
-    elif period == 'monthly':
-        display_df = resample_monthly(daily) if daily is not None else None
-        wu = get_warmup_data(sym)
-        warmup_df = resample_monthly(wu) if wu is not None else None
 
     if display_df is None or len(display_df) == 0:
         return {"error": "数据获取失败"}
 
-    # 指标计算：预热数据足够时用预热，否则直接用展示数据
-    if warmup_df is not None and len(warmup_df) > len(display_df):
-        calc_df = warmup_df
-        display_dates = set(display_df['date'].astype(str))
-    else:
-        calc_df = display_df
-        display_dates = None
+    calc_df = display_df
 
     signals, meta = get_latest_signals(calc_df)
     sr = calculate_support_resistance(daily if daily is not None else display_df)
     cf = calculate_capital_flow(daily if daily is not None else display_df)
 
     df2 = calc_bsd_wang(calc_main_signals(calc_df))
-    if display_dates is not None:
-        df2 = df2[df2['date'].astype(str).isin(display_dates)].reset_index(drop=True)
 
     df2["bsd_bull"] = (df2["K"] > 30) & (df2["K"] >= df2["D"])
     df2["bsd_bear"] = (df2["K"] < 80) & (df2["K"] <= df2["D"])
@@ -243,16 +142,17 @@ def get_data(symbol='P2609', period='15', name=None):
         for name, val in sorted(sr["levels"].items(), key=lambda x: -x[1]):
             levels_sorted.append({"name": name, "value": val, "current": abs(val - cur) < 30})
 
+    def _rising(row, prev_row, col):
+        if prev_row is None: return False
+        try: return float(row.get(col)) > float(prev_row.get(col))
+        except: return False
+
     indicator_series = []
-    df2_tail = df2.tail(display_limit).reset_index(drop=True)
+    df2_tail = df2.reset_index(drop=True)
     for i, r in df2_tail.iterrows():
         ts = int(pd.Timestamp(r["date"]).timestamp())
         prev = df2_tail.iloc[i - 1] if i > 0 else None
-        def rising(col):
-            if prev is None: return False
-            v, pv = r.get(col), prev.get(col)
-            try: return float(v) > float(pv)
-            except: return False
+        def rising(col, _r=r, _p=prev): return _rising(_r, _p, col)
         indicator_series.append({
             "time": ts, "date": str(r["date"])[:16],
             "open":  safe(r.get("open",  r.get("close", 0))),
@@ -289,12 +189,15 @@ def get_data(symbol='P2609', period='15', name=None):
 @app.route("/api/data")
 def api_data():
     period = request.args.get('period', '15')
-    symbol = request.args.get('symbol', 'P2609')
+    symbol = request.args.get('symbol', 'P0')
     name   = request.args.get('name', None)
+    mode   = request.args.get('mode', 'full')   # full=全量 update=只返回最后3条
     try:
         data = get_data(symbol=symbol, period=period, name=name)
         if data is None:
             return jsonify({"error": "数据获取失败"}), 500
+        if mode == 'update' and 'indicator_series' in data:
+            data['indicator_series'] = data['indicator_series'][-3:]
         return jsonify(data)
     except Exception as e:
         import traceback; traceback.print_exc()

@@ -15,7 +15,7 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "knowledge_base", "signals")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 
-def get_realtime_bars(symbol="P2609", limit=120):
+def get_realtime_bars(symbol="P0", limit=120):
     """获取15分钟K线，失败则用日线兜底"""
     try:
         import akshare as ak
@@ -38,11 +38,13 @@ def get_realtime_bars(symbol="P2609", limit=120):
 
     # 日线兜底
     try:
-        from data_fetcher import get_palm_oil_data_akshare
-        df = get_palm_oil_data_akshare(days=limit)
-        if df is not None:
-            df["datetime"] = df["date"]
-            return df.tail(limit).reset_index(drop=True)
+        import akshare as ak
+        df = ak.futures_zh_daily_sina(symbol=symbol)
+        if df is not None and not df.empty:
+            df.columns = [c.lower() for c in df.columns]
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").tail(limit).reset_index(drop=True)
+            return df
     except Exception:
         pass
     return None
@@ -68,7 +70,7 @@ def run_monitor(interval_seconds=180, notify_fn=None):
     """
     from indicators import get_latest_signals
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 棕榈油信号监控启动（P2609，15分钟周期）")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 棕榈油信号监控启动（P0主力连续，15分钟周期）")
     print("做多：主图黄点(破浪) + 波段王K>30且多头柱")
     print("离场：主图绿点(空仓) + 波段王K<80且空头柱\n")
 
@@ -132,7 +134,7 @@ def _build_alert(meta, triggered):
     emoji    = "▲ 做多入场" if is_long else "▼ 离场平仓"
     lines = [f"【棕榈油15分钟 {emoji}】"]
     lines.append(f"时间：{meta['datetime']}")
-    lines.append(f"品种：棕榈2609  现价：{meta['close']}")
+    lines.append(f"品种：棕榈油主力  现价：{meta['close']}")
     lines.append("")
     if is_long:
         lines.append("★ 主图黄点（破浪）✓")
