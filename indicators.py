@@ -3,7 +3,7 @@
 来源：平安证券慧赢 TDX公式 → Python复现
 
 已实现：
-  1. 主图指标（破浪/空仓信号 — 黄绿点）
+  1. 主图指标（破浪信号 — 黄点做多/绿点做空）
   2. 波段王（K/D动能柱 + 多/空文字信号）
 待实现：
   3. JLHB 绝路航标（等待公式）
@@ -65,9 +65,9 @@ def sma(series, n, m):
 
 
 # ─────────────────────────────────────────────
-# 指标一：主图指标（破浪/空仓信号）
-# 黄点 = 破浪 = 做多信号
-# 绿点 = 空仓 = 离场/空头信号
+# 指标一：主图指标（破浪信号）
+# 黄点 = 破浪 = 做多入场信号
+# 绿点 = 破浪 = 做空入场信号
 # ─────────────────────────────────────────────
 
 def calc_main_signals(df):
@@ -78,7 +78,7 @@ def calc_main_signals(df):
       支撑      : 动态支撑价位
       QRG      : 综合强度分(-50~+50)
       破浪      : True = 黄点做多信号
-      空仓      : True = 绿点离场信号
+      空仓      : True = 绿点做空信号
     """
     c = df["close"].astype(float)
     h = df["high"].astype(float)
@@ -180,7 +180,7 @@ def get_latest_signals(df):
     综合信号检测（15分钟K线）
     ──────────────────────────────────
     做多触发：主图黄点（破浪）AND 波段王 K>30 AND K>=D
-    离场触发：主图绿点（空仓）AND 波段王 K<80 AND K<=D
+    做空触发：主图绿点（破浪）AND 波段王 K<80 AND K<=D
     ──────────────────────────────────
     返回：(signals_dict, meta_dict)
     """
@@ -194,18 +194,12 @@ def get_latest_signals(df):
     kong_cang = bool(last.get("空仓", False))           # 主图绿点
     K_val     = float(last.get("K", 0))
     D_val     = float(last.get("D", 0))
-    bsd_bull  = K_val > 30 and K_val >= D_val          # 波段王多头柱（蓝色）
-    bsd_bear  = K_val < 80 and K_val <= D_val          # 波段王空头柱（绿色）
 
     signals = {
-        # ── 组合信号（交易执行依据）──
-        "做多":   po_lang and bsd_bull,    # 黄点 + 波段王>30且多头
-        "离场":   kong_cang and bsd_bear,  # 绿点 + 波段王<80且空头
-        # ── 单项信号（辅助参考）──
-        "破浪_黄点":  po_lang,
-        "空仓_绿点":  kong_cang,
-        "波段王_多":  bsd_bull,
-        "波段王_空":  bsd_bear,
+        "做多":      po_lang,     # 仅黄点破浪 CROSS(QRG,-10)
+        "做空":      kong_cang,   # 仅绿点空仓 QRG==-50 AND REF(QRG,1)>=-30
+        "破浪_黄点": po_lang,
+        "空仓_绿点": kong_cang,
     }
 
     meta = {

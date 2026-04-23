@@ -57,8 +57,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .level-row .lv-val { font-weight: 600; font-family: monospace; }
 .hist-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(48,54,61,.5); font-size: 12px; }
 .hist-item:last-child { border: none; }
-.hist-long { color: var(--bull); font-weight: 700; }
-.hist-exit { color: var(--bear); font-weight: 700; }
+.hist-long  { color: #FFD700; font-weight: 700; }
+.hist-short { color: #00CC00; font-weight: 700; }
 
 /* 自选股面板 */
 .wl-search-wrap { position: relative; margin-bottom: 8px; }
@@ -100,6 +100,65 @@ body.fullscreen #sidebar { display: none; }
 
 /* 波段王 canvas overlay */
 .bsd-canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; }
+
+/* 弹窗堆叠容器 */
+#popup-stack {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; gap: 10px;
+  z-index: 9999; pointer-events: none; width: 500px;
+}
+/* 信号弹窗 */
+.signal-alert {
+  background: #0a0a18; border-radius: 20px;
+  padding: 32px 52px 20px; text-align: center; pointer-events: all;
+  animation: sig-shake 0.25s linear infinite;
+}
+.signal-alert.long  { border: 3px solid var(--bull); box-shadow: 0 0 60px rgba(239,83,80,.6), 0 0 120px rgba(239,83,80,.25), 0 8px 40px rgba(0,0,0,.9); }
+.signal-alert.short { border: 3px solid var(--bear); box-shadow: 0 0 60px rgba(38,166,154,.6), 0 0 120px rgba(38,166,154,.25), 0 8px 40px rgba(0,0,0,.9); }
+.signal-alert-icon { font-size: 46px; margin-bottom: 8px; }
+.signal-alert-type { font-size: 28px; font-weight: 800; margin-bottom: 10px; letter-spacing: 4px; }
+.signal-alert-info { font-size: 13px; color: var(--muted); margin-bottom: 12px; line-height: 2; }
+.sig-remain { color: var(--text); font-weight: 600; }
+.signal-alert-actions { display: flex; gap: 10px; justify-content: center; margin-bottom: 12px; }
+.signal-alert-goto {
+  padding: 8px 20px; border-radius: 8px; border: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: var(--text); transition: all .15s;
+}
+.signal-alert-goto:hover { border-color: var(--accent); color: var(--accent); }
+.signal-alert-close { padding: 8px 20px; border-radius: 8px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; }
+.signal-alert.long  .signal-alert-close { background: var(--bull); color: #fff; }
+.signal-alert.short .signal-alert-close { background: var(--bear); color: #fff; }
+/* 倒计时进度条 */
+.signal-progress { height: 5px; background: rgba(255,255,255,.1); border-radius: 3px; overflow: hidden; }
+.signal-progress-bar { height: 100%; width: 100%; border-radius: 3px; transition: width 1s linear; }
+.signal-alert.long  .signal-progress-bar { background: #FFD700; }
+.signal-alert.short .signal-progress-bar { background: #26a69a; }
+/* 铃铛未读徽章 */
+#bell-badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 3px; background: #ef5350; border-radius: 8px; font-size: 10px; color: #fff; font-weight: 700; display: none; align-items: center; justify-content: center; pointer-events: none; }
+/* 未读信号面板 */
+#unread-panel { display: none; position: fixed; top: 56px; right: 16px; width: 340px; background: #111; border: 1px solid #2a2a2a; border-radius: 10px; z-index: 1000; max-height: 400px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.7); }
+.unread-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #1e1e1e; font-size: 12px; cursor: pointer; transition: background .12s; }
+.unread-item:last-child { border: none; }
+.unread-item:hover { background: rgba(88,166,255,.08); }
+.unread-sig-long  { color: var(--bull); font-weight: 700; }
+.unread-sig-short { color: var(--bear); font-weight: 700; }
+/* 自选品种状态圆点 */
+.wl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-right: 2px; }
+.wl-dot.long    { background: var(--bull); box-shadow: 0 0 4px rgba(239,83,80,.8); }
+.wl-dot.short   { background: var(--bear); box-shadow: 0 0 4px rgba(38,166,154,.8); }
+.wl-dot.expired { background: #444; }
+.wl-dot.none    { background: transparent; }
+/* 过期历史条目 */
+.hist-expired { opacity: .4; text-decoration: line-through; }
+.hist-expired-tag { font-size: 10px; color: #555; }
+@keyframes sig-shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-14px); }
+  40%       { transform: translateX(14px); }
+  60%       { transform: translateX(-10px); }
+  80%       { transform: translateX(10px); }
+}
 </style>
 </head>
 <body>
@@ -116,13 +175,15 @@ body.fullscreen #sidebar { display: none; }
   <div class="period-btns">
     <button class="period-btn" data-p="1">1分</button>
     <button class="period-btn" data-p="5">5分</button>
-    <button class="period-btn active" data-p="15">15分</button>
-    <button class="period-btn" data-p="30">30分</button>
+    <button class="period-btn" data-p="15">15分</button>
+    <button class="period-btn active" data-p="30">30分</button>
     <button class="period-btn" data-p="60">60分</button>
+    <button class="period-btn" data-p="120">120分</button>
     <button class="period-btn" data-p="daily">日线</button>
   </div>
   <div class="sep"></div>
   <button class="period-btn" id="btn-import" style="padding:4px 12px;">导入公式</button>
+  <button class="icon-btn" id="btn-bell" title="未读信号" style="position:relative">🔔<span id="bell-badge"></span></button>
   <button class="icon-btn" id="btn-refresh" title="刷新">⟳</button>
   <button class="icon-btn" id="btn-fs" title="全屏/还原">⛶</button>
 </div>
@@ -179,22 +240,29 @@ body.fullscreen #sidebar { display: none; }
     <div class="s-card">
       <div class="s-title">当前信号</div>
       <div id="sig-badge" class="signal-badge wait">◉ 等待信号</div>
-      <div class="sub-sigs" style="margin-top:10px">
-        <div class="s-title" style="margin-bottom:6px">做多条件</div>
-        <div class="sub-sig"><span class="lbl">① 黄点 破浪</span><span id="s-po" class="val off">--</span></div>
-        <div class="sub-sig"><span class="lbl">② 波段王红色 K>D</span><span id="s-bsdm" class="val off">--</span></div>
-        <div class="sub-sig"><span class="lbl">③ K > 30</span><span id="s-kgt30" class="val off">-- </span></div>
-      </div>
-      <div class="sub-sigs" style="margin-top:12px">
-        <div class="s-title" style="margin-bottom:6px">离场条件</div>
-        <div class="sub-sig"><span class="lbl">① 绿点 空仓</span><span id="s-kong" class="val off">--</span></div>
-        <div class="sub-sig"><span class="lbl">② 波段王绿色 K&lt;D</span><span id="s-bsdk" class="val off">--</span></div>
-        <div class="sub-sig"><span class="lbl">③ K &lt; 80</span><span id="s-klt80" class="val off">--</span></div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+        <div id="status-po"   style="padding:6px 10px;border-radius:6px;background:rgba(125,133,144,.1);font-size:13px;color:var(--muted);transition:all .2s;">🟡 黄点破浪：未触发</div>
+        <div id="status-kong" style="padding:6px 10px;border-radius:6px;background:rgba(125,133,144,.1);font-size:13px;color:var(--muted);transition:all .2s;">🟢 绿点空仓：未触发</div>
       </div>
     </div>
     <div class="s-card">
       <div class="s-title">历史信号</div>
       <div id="hist-list"></div>
+    </div>
+    <div class="s-card">
+      <div class="s-title">设置</div>
+      <div class="metric-row" style="align-items:center;">
+        <span class="lbl">弹窗时效</span>
+        <select id="popup-duration-sel" style="background:#111;border:1px solid #2a2a2a;border-radius:4px;color:#e6edf3;font-size:12px;padding:3px 8px;outline:none;cursor:pointer;">
+          <option value="5">5分钟</option>
+          <option value="10">10分钟</option>
+          <option value="15" selected>15分钟</option>
+          <option value="20">20分钟</option>
+          <option value="30">30分钟</option>
+          <option value="never">不自动消失</option>
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">夜盘(21:00后)自动延长至30分钟</div>
     </div>
   </div>
 
@@ -222,9 +290,26 @@ body.fullscreen #sidebar { display: none; }
   </div>
 </div>
 
+<!-- 弹窗堆叠容器（最多3个） -->
+<div id="popup-stack"></div>
+
+<!-- 未读信号面板 -->
+<div id="unread-panel">
+  <div style="padding:10px 14px;border-bottom:1px solid #2a2a2a;font-weight:700;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+    <span>未读信号</span>
+    <span id="unread-clear" style="font-size:11px;color:var(--muted);cursor:pointer;font-weight:400;">全部清除</span>
+  </div>
+  <div id="unread-list"></div>
+</div>
+
 <script>
 const API = '/api/data';
-let currentPeriod = '15';
+// 弹窗状态（必须在 renderWatchlist / updateSidebar 之前声明）
+const _activePopups  = {};
+const _unreadSignals = [];
+const _symbolStatus  = {};
+const _expiredKeys   = new Set();
+let currentPeriod = '30';
 let currentSymbol = 'P0';
 let currentSymbolName = '棕榈油主力';
 let allData = null;
@@ -648,7 +733,7 @@ function renderAll(data) {
   });
 
   // ── 信号标记 — 挂在最顶层 markerSeries 上，不被任何线遮挡
-  // 黄点: 破浪(主图做多)  绿点: 空仓(主图离场)  — 公式仅有这两个K线信号
+  // 黄点: 破浪(主图做多)  绿点: 破浪(主图做空)  — 公式仅有这两个K线信号
   markerSeries.setData(bars.map(b => ({ time: b.time, value: b.close })));
   const markers = [];
   bars.forEach(b => {
@@ -775,33 +860,34 @@ function updateSidebar(data) {
   const badge = document.getElementById('sig-badge');
   if (sig['做多']) {
     badge.className = 'signal-badge long'; badge.textContent = '▲ 做多信号';
-  } else if (sig['离场']) {
-    badge.className = 'signal-badge exit'; badge.textContent = '▼ 离场信号';
+  } else if (sig['做空']) {
+    badge.className = 'signal-badge exit'; badge.textContent = '▼ 做空信号';
   } else {
     badge.className = 'signal-badge wait'; badge.textContent = '◉ 等待信号';
   }
 
-  function sv(id, on) {
-    const el = document.getElementById(id);
-    el.textContent = on ? '✔' : '✘';
-    el.className = 'val ' + (on ? 'on' : 'off');
-  }
-  const kv = meta.K ?? 0;
-  const dv = meta.D ?? 0;
-  sv('s-po',    sig['破浪_黄点']);
-  sv('s-bsdm',  kv >= dv && kv > 0);
-  sv('s-kgt30', kv > 30);
-  sv('s-kong',  sig['空仓_绿点']);
-  sv('s-bsdk',  kv <= dv && kv > 0);
-  sv('s-klt80', kv < 80);
+  const poEl   = document.getElementById('status-po');
+  const kongEl = document.getElementById('status-kong');
+  const poOn   = sig['破浪_黄点'];
+  const kongOn = sig['空仓_绿点'];
+  poEl.textContent        = poOn   ? '🟡 黄点破浪：已触发' : '🟡 黄点破浪：未触发';
+  poEl.style.background   = poOn   ? 'rgba(255,215,0,.18)' : 'rgba(125,133,144,.1)';
+  poEl.style.color        = poOn   ? '#FFD700' : 'var(--muted)';
+  kongEl.textContent      = kongOn ? '🟢 绿点空仓：已触发' : '🟢 绿点空仓：未触发';
+  kongEl.style.background = kongOn ? 'rgba(0,204,0,.18)' : 'rgba(125,133,144,.1)';
+  kongEl.style.color      = kongOn ? '#00CC00' : 'var(--muted)';
 
   const histList = document.getElementById('hist-list');
   histList.innerHTML = '';
   (data.history || []).forEach(h => {
     const r = document.createElement('div');
     r.className = 'hist-item';
-    const cls = h.signal.includes('做多') ? 'hist-long' : 'hist-exit';
-    r.innerHTML = `<span>${h.date}</span><span>${h.close}</span><span class="${cls}">${h.signal}</span>`;
+    const cls = h.signal.includes('做多') ? 'hist-long' : 'hist-short';
+    const dateStr = h.date.replace(' 00:00', '');
+    const expired = _expiredKeys.has(`${data.symbol}|${h.date}`);
+    if (expired) r.classList.add('hist-expired');
+    r.innerHTML = `<span>${dateStr}</span><span>${h.close}</span>` +
+      `<span class="${cls}">${h.signal}${expired ? '<span class="hist-expired-tag">已过期</span>' : ''}</span>`;
     histList.appendChild(r);
   });
 }
@@ -898,9 +984,10 @@ const DEFAULT_WATCHLIST = [
   { symbol: 'P0',  name: '棕榈油主力' },
   { symbol: 'CU0', name: '铜主力' },
   { symbol: 'SA0', name: '纯碱主力' },
+  { symbol: 'SN2605', name: '白糖2605' },
 ];
 
-const WATCHLIST_VERSION = '3';
+const WATCHLIST_VERSION = '4';
 function loadWatchlist() {
   try {
     // 版本不匹配时重置为默认（合约换月）
@@ -926,9 +1013,11 @@ function renderWatchlist() {
     div.className = 'watchlist-item' + (item.symbol === currentSymbol ? ' active' : '');
     div.dataset.symbol = item.symbol;
     div.dataset.name = item.name;
-    // 名称 / 代码 / 删除按钮
+    // 状态圆点 / 名称 / 代码 / 删除按钮
+    const dot = document.createElement('span');
+    dot.className = `wl-dot ${_symbolStatus[item.symbol] || 'none'}`;
     const nameEl = document.createElement('div');
-    nameEl.style.cssText = 'display:flex;flex-direction:column;gap:1px;';
+    nameEl.style.cssText = 'display:flex;flex-direction:column;gap:1px;flex:1;';
     nameEl.innerHTML = `<span class="wl-name">${item.name.replace(/[0-9]+$/, '')}</span><span class="wl-code">${item.symbol}</span>`;
     const del = document.createElement('span');
     del.className = 'wl-del';
@@ -947,6 +1036,7 @@ function renderWatchlist() {
       }
       renderWatchlist();
     });
+    div.appendChild(dot);
     div.appendChild(nameEl);
     div.appendChild(del);
     div.addEventListener('click', () => {
@@ -1084,13 +1174,162 @@ async function scanAllWatchlist() {
   const list = loadWatchlist();
   for (const item of list) {
     try {
-      // 信号判断固定用15分钟，不受图表当前周期影响
-      const res = await fetch(`${API}?period=15&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
+      // 信号判断固定用30分钟，不受图表当前周期影响
+      const res = await fetch(`${API}?period=30&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
       const data = await res.json();
       if (data.error) continue;
       checkAndNotify(data);
     } catch(e) {}
   }
+}
+
+// ── 提示音（Web Audio API）────────────────────────────
+
+function playAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const beep = (t, freq, dur) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.4, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t);
+      osc.stop(t + dur);
+    };
+    const t = ctx.currentTime;
+    beep(t,       880,  0.15);
+    beep(t + 0.2, 880,  0.15);
+    beep(t + 0.4, 1100, 0.3);
+  } catch(e) {}
+}
+
+// ── 弹窗状态管理 ──────────────────────────────────────
+
+function getPopupDuration() {
+  const v = localStorage.getItem('popup_duration') || '15';
+  return v === 'never' ? null : parseInt(v) * 60000;
+}
+function getEffectiveDuration() {
+  const base = getPopupDuration();
+  if (!base) return null;
+  const h = new Date().getHours();
+  return (h >= 21 || h < 6) ? Math.max(base, 30 * 60000) : base;
+}
+function fmtRemain(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function updateBell() {
+  const badge = document.getElementById('bell-badge');
+  const n = _unreadSignals.length;
+  badge.textContent = n > 9 ? '9+' : n;
+  badge.style.display = n ? 'flex' : 'none';
+}
+function updateSoundTimer() {
+  const hasActive = Object.keys(_activePopups).length > 0;
+  if (hasActive && !window._alertSoundTimer) {
+    playAlertSound();
+    window._alertSoundTimer = setInterval(playAlertSound, 2500);
+  } else if (!hasActive && window._alertSoundTimer) {
+    clearInterval(window._alertSoundTimer);
+    window._alertSoundTimer = null;
+  }
+}
+
+function showSignalToast(data, sigType) {
+  const sym    = data.symbol;
+  const isLong = sigType === '做多';
+  const meta   = data.meta || {};
+  const dt     = meta.datetime || '';
+  const expKey = `${sym}|${dt.slice(0, 16)}`;
+
+  if (_activePopups[sym]) return;  // 该品种弹窗已在显示
+  if (Object.keys(_activePopups).length >= 3) {
+    _unreadSignals.push({ data, sigType });
+    updateBell();
+    return;
+  }
+
+  _symbolStatus[sym] = isLong ? 'long' : 'short';
+  const duration  = getEffectiveDuration();
+  const startTime = Date.now();
+  const durLabel  = duration ? `${Math.round(duration / 60000)}分钟` : '∞';
+
+  const el = document.createElement('div');
+  el.className = `signal-alert ${isLong ? 'long' : 'short'}`;
+  el.dataset.symbol = sym;
+  el.innerHTML =
+    `<div class="signal-alert-icon">${isLong ? '▲' : '▼'}</div>` +
+    `<div class="signal-alert-type" style="color:${isLong ? 'var(--bull)' : 'var(--bear)'}">` +
+      `${isLong ? '做  多  信  号' : '做  空  信  号'}` +
+    `</div>` +
+    `<div class="signal-alert-info">` +
+      `${data.name || sym}<br>` +
+      `${dt.slice(11, 19)}&nbsp;&nbsp;收盘 ${meta.close?.toFixed(0) ?? '--'}<br>` +
+      `<span class="sig-remain">剩余时效：${duration ? fmtRemain(duration) : '∞'} ⏱</span>` +
+    `</div>` +
+    `<div class="signal-alert-actions">` +
+      `<button class="signal-alert-goto">立即查看K线</button>` +
+      `<button class="signal-alert-close">知道了</button>` +
+    `</div>` +
+    `<div class="signal-progress"><div class="signal-progress-bar"></div></div>`;
+
+  const progressBar = el.querySelector('.signal-progress-bar');
+  const remainEl    = el.querySelector('.sig-remain');
+
+  // 必须先定义 state，闭包里要引用
+  const state = { el, ticker: null, autoClose: null };
+
+  function closeAlert(expired) {
+    el.remove();
+    if (state.ticker)    clearInterval(state.ticker);
+    if (state.autoClose) clearTimeout(state.autoClose);
+    delete _activePopups[sym];
+    if (expired) {
+      _symbolStatus[sym] = 'expired';
+      _expiredKeys.add(expKey);
+    } else {
+      _symbolStatus[sym] = null;
+    }
+    updateSoundTimer();
+    renderWatchlist();
+    // 从未读队列补一个
+    if (_unreadSignals.length && Object.keys(_activePopups).length < 3) {
+      const next = _unreadSignals.shift();
+      updateBell();
+      showSignalToast(next.data, next.sigType);
+    }
+  }
+
+  el.querySelector('.signal-alert-close').addEventListener('click', () => closeAlert(false));
+  el.querySelector('.signal-alert-goto').addEventListener('click', () => {
+    currentSymbol = sym;
+    currentSymbolName = data.name || sym;
+    viewInitialized = false;
+    renderWatchlist();
+    loadData();
+    closeAlert(false);
+  });
+
+  document.getElementById('popup-stack').appendChild(el);
+  _activePopups[sym] = state;
+
+  if (duration) {
+    state.ticker = setInterval(() => {
+      const rem = duration - (Date.now() - startTime);
+      if (rem <= 0) { closeAlert(true); return; }
+      progressBar.style.width = (rem / duration * 100) + '%';
+      remainEl.textContent = `剩余时效：${fmtRemain(rem)} ⏱`;
+    }, 1000);
+    state.autoClose = setTimeout(() => closeAlert(true), duration);
+  }
+
+  updateSoundTimer();
+  renderWatchlist();
 }
 
 // ── 桌面通知 ─────────────────────────────────────────
@@ -1103,7 +1342,6 @@ function initNotifications() {
 }
 
 function checkAndNotify(data) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const sig  = data.signals || {};
   const meta = data.meta    || {};
   const sym  = data.symbol;
@@ -1114,18 +1352,24 @@ function checkAndNotify(data) {
 
   if (sig['做多'] && !(prev.type === '做多' && prev.time === time)) {
     prev.type = '做多'; prev.time = time;
-    new Notification(`▲ 做多信号 — ${data.name}`, {
-      body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-      tag:  `${sym}-long`,
-    });
+    showSignalToast(data, '做多');
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(`▲ 做多信号 — ${data.name}`, {
+        body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+        tag:  `${sym}-long`,
+      });
+    }
   }
 
-  if (sig['离场'] && !(prev.type === '离场' && prev.time === time)) {
-    prev.type = '离场'; prev.time = time;
-    new Notification(`▼ 离场信号 — ${data.name}`, {
-      body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-      tag:  `${sym}-exit`,
-    });
+  if (sig['做空'] && !(prev.type === '做空' && prev.time === time)) {
+    prev.type = '做空'; prev.time = time;
+    showSignalToast(data, '做空');
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(`▼ 做空信号 — ${data.name}`, {
+        body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+        tag:  `${sym}-short`,
+      });
+    }
   }
 }
 
@@ -1199,6 +1443,51 @@ document.getElementById('fi-submit').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+// ── 铃铛 & 未读面板 ────────────────────────────────────
+document.getElementById('btn-bell').addEventListener('click', () => {
+  const panel = document.getElementById('unread-panel');
+  const open  = panel.style.display !== 'none';
+  if (open) { panel.style.display = 'none'; return; }
+  const list = document.getElementById('unread-list');
+  list.innerHTML = '';
+  if (!_unreadSignals.length) {
+    list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">无未读信号</div>';
+  } else {
+    _unreadSignals.forEach((item, idx) => {
+      const isLong = item.sigType === '做多';
+      const d = document.createElement('div');
+      d.className = 'unread-item';
+      d.innerHTML =
+        `<div><span class="unread-sig-${isLong ? 'long' : 'short'}">${isLong ? '▲ 做多' : '▼ 做空'}</span>` +
+        `&nbsp;${item.data.name || item.data.symbol}</div>` +
+        `<span style="color:var(--muted)">${(item.data.meta?.datetime || '').slice(11, 16)}</span>`;
+      d.addEventListener('click', () => {
+        _unreadSignals.splice(idx, 1);
+        updateBell();
+        panel.style.display = 'none';
+        showSignalToast(item.data, item.sigType);
+      });
+      list.appendChild(d);
+    });
+  }
+  panel.style.display = 'block';
+});
+document.getElementById('unread-clear').addEventListener('click', () => {
+  _unreadSignals.length = 0;
+  updateBell();
+  document.getElementById('unread-list').innerHTML =
+    '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">无未读信号</div>';
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#btn-bell') && !e.target.closest('#unread-panel'))
+    document.getElementById('unread-panel').style.display = 'none';
+});
+
+// ── 弹窗时效设置 ───────────────────────────────────────
+const _durSel = document.getElementById('popup-duration-sel');
+_durSel.value = localStorage.getItem('popup_duration') || '15';
+_durSel.addEventListener('change', () => localStorage.setItem('popup_duration', _durSel.value));
 
 // ── 启动 ─────────────────────────────────────────────
 initCharts();
