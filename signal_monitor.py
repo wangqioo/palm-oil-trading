@@ -72,7 +72,7 @@ def run_monitor(interval_seconds=180, notify_fn=None):
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 棕榈油信号监控启动（P0主力连续，15分钟周期）")
     print("做多：主图黄点(破浪) + 波段王K>30且多头柱")
-    print("离场：主图绿点(空仓) + 波段王K<80且空头柱\n")
+    print("做空：主图绿点(破浪) + 波段王K<80且空头柱\n")
 
     last_signal_bar = None   # 防重复：记录上次触发的K线时间
 
@@ -103,8 +103,8 @@ def run_monitor(interval_seconds=180, notify_fn=None):
                   f"价:{meta['close']} | QRG:{meta['QRG']} | {k_status} | 支撑:{meta['支撑']}"
                   + (f"  ★★ {triggered}" if triggered else ""))
 
-            # 只推送组合信号（做多/离场），单项仅打印
-            triggered = [k for k, v in signals.items() if v and k in ("做多", "离场")]
+            # 只推送组合信号（做多/做空），单项仅打印
+            triggered = [k for k, v in signals.items() if v and k in ("做多", "做空")]
 
             if triggered and current_bar != last_signal_bar:
                 msg = _build_alert(meta, triggered)
@@ -130,8 +130,8 @@ def run_monitor(interval_seconds=180, notify_fn=None):
 
 def _build_alert(meta, triggered):
     is_long  = "做多" in triggered
-    is_exit  = "离场" in triggered
-    emoji    = "▲ 做多入场" if is_long else "▼ 离场平仓"
+    is_short = "做空" in triggered
+    emoji    = "▲ 做多入场" if is_long else "▼ 做空入场"
     lines = [f"【棕榈油15分钟 {emoji}】"]
     lines.append(f"时间：{meta['datetime']}")
     lines.append(f"品种：棕榈油主力  现价：{meta['close']}")
@@ -139,8 +139,8 @@ def _build_alert(meta, triggered):
     if is_long:
         lines.append("★ 主图黄点（破浪）✓")
         lines.append(f"★ 波段王 K={meta['K']} > 30，多头柱 ✓")
-    if is_exit:
-        lines.append("★ 主图绿点（空仓）✓")
+    if is_short:
+        lines.append("★ 主图绿点（破浪）✓")
         lines.append(f"★ 波段王 K={meta['K']} < 80，空头柱 ✓")
     lines.append("")
     lines.append(f"QRG：{meta['QRG']}  支撑：{meta['支撑']}")

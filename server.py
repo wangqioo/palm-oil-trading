@@ -12,7 +12,7 @@ import pandas as pd
 app = Flask(__name__, static_folder="dashboard")
 CORS(app)
 
-PERIOD_MAP = {'1': '1', '5': '5', '15': '15', '30': '30', '60': '60'}
+PERIOD_MAP = {'1': '1', '5': '5', '15': '15', '30': '30', '60': '60', '120': '120'}
 
 # 使用新浪主力连续合约（品种前缀+0），永远跟踪当前主力，无需换月维护
 SYMBOLS = {
@@ -58,17 +58,26 @@ def clean(obj):
 
 def get_minute_data(sina_code, period='15'):
     import akshare as ak
-    p = PERIOD_MAP.get(str(period), '15')
+    # 120分钟不被新浪接口直接支持，拉60分钟后resample
+    fetch_p = '60' if str(period) == '120' else PERIOD_MAP.get(str(period), '15')
     try:
-        df = ak.futures_zh_minute_sina(symbol=sina_code, period=p)
+        df = ak.futures_zh_minute_sina(symbol=sina_code, period=fetch_p)
         df.columns = [c.lower() for c in df.columns]
         df['date'] = pd.to_datetime(df['datetime'])
         df = df.sort_values('date').reset_index(drop=True)
         if 'volume' not in df.columns:
             df['volume'] = 0
+        if str(period) == '120':
+            df = (df.set_index('date')
+                    .resample('120min', closed='left', label='left')
+                    .agg(open=('open', 'first'), high=('high', 'max'),
+                         low=('low', 'min'),   close=('close', 'last'),
+                         volume=('volume', 'sum'))
+                    .dropna(subset=['close'])
+                    .reset_index())
         return df
     except Exception as e:
-        print(f'{sina_code} {p}分钟数据失败: {e}')
+        print(f'{sina_code} {period}分钟数据失败: {e}')
         return None
 
 def get_daily_data(symbol_cfg):
@@ -123,17 +132,15 @@ def get_data(symbol='P2609', period='15', name=None):
 
     df2 = calc_bsd_wang(calc_main_signals(calc_df))
 
-    df2["bsd_bull"] = (df2["K"] > 30) & (df2["K"] >= df2["D"])
-    df2["bsd_bear"] = (df2["K"] < 80) & (df2["K"] <= df2["D"])
-    df2["做多"] = df2["破浪"] & df2["bsd_bull"]
-    df2["离场"] = df2["空仓"] & df2["bsd_bear"]
+    df2["做多"] = df2["破浪"]
+    df2["做空"] = df2["空仓"]
 
     history = []
-    for _, r in df2[df2["做多"] | df2["离场"]].tail(10).iterrows():
+    for _, r in df2[df2["做多"] | df2["做空"]].tail(10).iterrows():
         sigs = []
-        if r["做多"]: sigs.append("▲做多")
-        if r["离场"]: sigs.append("▼离场")
-        history.append({"date": str(r["date"])[:10], "close": round(float(r["close"]), 0),
+        if r["做多"]: sigs.append("🟡 做多")
+        if r["做空"]: sigs.append("🟢 做空")
+        history.append({"date": str(r["date"])[:16], "close": round(float(r["close"]), 0),
                          "K": round(float(r["K"]), 1), "signal": " ".join(sigs)})
 
     levels_sorted = []
