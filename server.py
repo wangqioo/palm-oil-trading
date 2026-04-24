@@ -1,13 +1,14 @@
 """
 期货交易看板 — Flask API 服务（多品种支持）
 """
-import sys, os, math
+import sys, os, math, time as _time
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from datetime import datetime
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__, static_folder="dashboard")
 CORS(app)
@@ -56,18 +57,50 @@ def clean(obj):
 
 # ── 数据获取 ──────────────────────────────────────────────────────
 
+# 分钟线内存缓存：按周期设定 TTL（秒），避免频繁重拉
+_minute_cache = {}
+_MINUTE_TTL = {'1': 20, '5': 60, '15': 180, '30': 300, '60': 600, '120': 1200}
+
 def get_minute_data(sina_code, period='15'):
     import akshare as ak
-    # 120分钟不被新浪接口直接支持，拉60分钟后resample
-    fetch_p = '60' if str(period) == '120' else PERIOD_MAP.get(str(period), '15')
+    period = str(period)
+    cache_key = (sina_code, period)
+    ttl = _MINUTE_TTL.get(period, 180)
+    now = _time.time()
+
+    # 命中缓存
+    if cache_key in _minute_cache:
+        ts, df = _minute_cache[cache_key]
+        if now - ts < ttl:
+            return df
+
+    fetch_p = '60' if period == '120' else PERIOD_MAP.get(period, '15')
+
+    # 带重试的拉取（最多2次，间隔1秒）
+    df = None
+    for attempt in range(3):
+        try:
+            df = ak.futures_zh_minute_sina(symbol=sina_code, period=fetch_p)
+            break
+        except Exception as e:
+            print(f'{sina_code} {period}分 第{attempt+1}次失败: {e}')
+            if attempt < 2:
+                _time.sleep(1)
+
+    if df is None:
+        # 返回上次缓存（哪怕已过期），降级兜底
+        if cache_key in _minute_cache:
+            print(f'{sina_code} {period}分 使用过期缓存')
+            return _minute_cache[cache_key][1]
+        return None
+
     try:
-        df = ak.futures_zh_minute_sina(symbol=sina_code, period=fetch_p)
         df.columns = [c.lower() for c in df.columns]
         df['date'] = pd.to_datetime(df['datetime'])
         df = df.sort_values('date').reset_index(drop=True)
         if 'volume' not in df.columns:
             df['volume'] = 0
-        if str(period) == '120':
+        if period == '120':
             df = (df.set_index('date')
                     .resample('120min', closed='left', label='left')
                     .agg(open=('open', 'first'), high=('high', 'max'),
@@ -75,27 +108,53 @@ def get_minute_data(sina_code, period='15'):
                          volume=('volume', 'sum'))
                     .dropna(subset=['close'])
                     .reset_index())
-        return df
     except Exception as e:
-        print(f'{sina_code} {period}分钟数据失败: {e}')
-        return None
+        print(f'{sina_code} {period}分 处理失败: {e}')
+        return _minute_cache.get(cache_key, (None, None))[1]
+
+    _minute_cache[cache_key] = (now, df)
+    return df
 
 def get_daily_data(symbol_cfg):
     import akshare as ak
     code = symbol_cfg['daily_code']
     cache_key = f"daily_{code}"
+
+    for attempt in range(3):
+        try:
+            df = ak.futures_zh_daily_sina(symbol=code)
+            if df is None or df.empty: raise ValueError("空数据")
+            df.columns = [c.lower() for c in df.columns]
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            _save_cache(cache_key, df)
+            print(f"{code}: {len(df)} 条，收={df['close'].iloc[-1]:.0f}")
+            return df
+        except Exception as e:
+            print(f"{code} 日线第{attempt+1}次失败: {e}")
+            if attempt < 2:
+                _time.sleep(1)
+
+    print(f"{code} 日线全部失败，用CSV缓存")
+    return _load_cache(cache_key)
+
+
+def get_weekly_data(symbol_cfg):
+    daily = get_daily_data(symbol_cfg)
+    if daily is None or daily.empty:
+        return None
     try:
-        df = ak.futures_zh_daily_sina(symbol=code)
-        if df is None or df.empty: raise ValueError("空数据")
-        df.columns = [c.lower() for c in df.columns]
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date").reset_index(drop=True)
-        _save_cache(cache_key, df)
-        print(f"{code}: {len(df)} 条，收={df['close'].iloc[-1]:.0f}")
-        return df
+        weekly = (daily.set_index('date')
+                  .resample('W-FRI', closed='right', label='right')
+                  .agg(open=('open', 'first'), high=('high', 'max'),
+                       low=('low', 'min'),    close=('close', 'last'),
+                       volume=('volume', 'sum'))
+                  .dropna(subset=['close'])
+                  .reset_index())
+        return weekly
     except Exception as e:
-        print(f"{code} 日线失败: {e}，用缓存")
-        return _load_cache(cache_key)
+        print(f"周线聚合失败: {e}")
+        return None
 
 
 # ── 核心数据计算 ──────────────────────────────────────────────────
@@ -113,10 +172,12 @@ def get_data(symbol='P2609', period='15', name=None):
             'daily_code': symbol,
         }
 
-    is_minute = str(period) not in ('daily',)
+    is_minute = str(period) not in ('daily', 'weekly')
 
     daily = get_daily_data(sym)
-    if is_minute:
+    if str(period) == 'weekly':
+        display_df = get_weekly_data(sym)
+    elif is_minute:
         display_df = get_minute_data(sym['sina_code'], period)
     else:
         display_df = daily
@@ -184,6 +245,7 @@ def get_data(symbol='P2609', period='15', name=None):
         "updated":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "symbol":   symbol,
         "name":     sym['name'],
+        "period":   str(period),
         "signals":  {k: bool(v) for k, v in signals.items()},
         "meta":     meta,
         "capital_flow": cf,
@@ -283,6 +345,92 @@ def api_resolve():
     except Exception as e:
         return jsonify({"error": f"合约 {symbol} 不存在: {e}"}), 404
 
+_trend_cache = {}   # symbol -> (timestamp, result_dict)
+_TREND_TTL   = 300  # 5分钟缓存
+
+@app.route("/api/trend")
+def api_trend():
+    """返回指定品种在各周期的 K/D 趋势状态（多头/空头/等待）"""
+    symbol = request.args.get('symbol', 'P0')
+    name   = request.args.get('name', None)
+
+    now = _time.time()
+    if symbol in _trend_cache:
+        ts, cached = _trend_cache[symbol]
+        if now - ts < _TREND_TTL:
+            return jsonify(cached)
+
+    sym = SYMBOLS.get(symbol)
+    if sym is None:
+        sym = {'name': name or symbol, 'sina_code': symbol, 'daily_code': symbol}
+
+    from indicators import calc_main_signals, calc_bsd_wang
+
+    PERIODS = [
+        ('15',     '15分'),
+        ('30',     '30分'),
+        ('60',     '60分'),
+        ('120',    '120分'),
+        ('daily',  '日线'),
+        ('weekly', '周线'),
+    ]
+
+    trend = {}
+    daily_df = get_daily_data(sym)   # 日线只拉一次，各周期复用
+
+    def _calc_one(p, lbl):
+        try:
+            if p == 'weekly':
+                df = get_weekly_data(sym) if daily_df is not None else None
+            elif p == 'daily':
+                df = daily_df
+            else:
+                df = get_minute_data(sym['sina_code'], p)
+
+            if df is None or len(df) < 15:
+                return p, {'status': 'unknown', 'label': lbl, 'K': None, 'D': None}
+
+            df2  = calc_bsd_wang(calc_main_signals(df))
+            last = df2.iloc[-1]
+            K    = round(float(last.get('K', 0)), 2)
+            D    = round(float(last.get('D', 0)), 2)
+            status = 'wait' if abs(K - D) < 1.0 else ('bull' if K > D else 'bear')
+            return p, {'status': status, 'label': lbl, 'K': K, 'D': D}
+        except Exception as e:
+            print(f"trend {symbol} {p}: {e}")
+            return p, {'status': 'unknown', 'label': lbl, 'K': None, 'D': None}
+
+    # 并行拉取分钟线（日线/周线共用已拉好的 daily_df，不重复请求）
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(_calc_one, p, lbl): p for p, lbl in PERIODS}
+        for fut in as_completed(futures):
+            p, result = fut.result()
+            trend[p] = result
+
+    result = {'symbol': symbol, 'name': sym['name'], 'trend': trend}
+    _trend_cache[symbol] = (now, result)
+    return jsonify(result)
+
+
+# ── 后端信号队列（供 scheduler.py 写入，前端轮询） ────────────────
+import threading as _threading
+_pending_signals = []
+_pending_lock    = _threading.Lock()
+
+@app.route("/api/signals/pending")
+def api_signals_pending():
+    """返回并清空待通知信号列表（供 scheduler.py + 前端消费）"""
+    with _pending_lock:
+        out = list(_pending_signals)
+        _pending_signals.clear()
+    return jsonify(out)
+
+def push_pending_signal(signal_dict):
+    """scheduler.py 调用此函数写入信号"""
+    with _pending_lock:
+        _pending_signals.append(signal_dict)
+
+
 @app.route("/api/indicators")
 def api_indicators():
     """列出所有已加载的指标插件"""
@@ -333,6 +481,27 @@ def api_import_formula():
 
     return jsonify({"ok": True, "id": plugin_id, "name": name,
                     "outputs": parser.build_meta_outputs()})
+
+
+@app.route("/api/test/signal", methods=["POST"])
+def api_test_signal():
+    """测试用：直接注入一条信号到队列，前端立即消费。
+    sigType 支持 'long'/'做多' 和 'short'/'做空'，避免编码问题。
+    """
+    body = request.get_json(force=True)
+    # 归一化 sigType：接受英文/中文两种写法
+    raw = body.get('sigType', 'short')
+    if raw in ('long', 'buy', '做多', 'LONG'):
+        body['sigType'] = '做多'
+    else:
+        body['sigType'] = '做空'
+    body.setdefault('symbol', 'P0')
+    body.setdefault('name',   '棕榈油主力')
+    body.setdefault('period', '30')
+    body.setdefault('price',  9781)
+    body.setdefault('time',   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    push_pending_signal(body)
+    return jsonify({"ok": True, "sigType": body['sigType'], "period": body['period']})
 
 
 @app.route("/")
