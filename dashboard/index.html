@@ -200,6 +200,11 @@ body.fullscreen #sidebar { display: none; }
 /* 交易状态灯 */
 #market-status { display: flex; align-items: center; gap: 4px; font-size: 12px; flex-shrink: 0; }
 #ms-emoji { font-size: 11px; line-height: 1; }
+/* 侧边栏滚动条 — 贴近面板色调，与右边缘对齐 */
+#sidebar ::-webkit-scrollbar { width: 4px; }
+#sidebar ::-webkit-scrollbar-track { background: transparent; }
+#sidebar ::-webkit-scrollbar-thumb { background: rgba(125,133,144,.25); border-radius: 2px; }
+#sidebar ::-webkit-scrollbar-thumb:hover { background: rgba(125,133,144,.5); }
 </style>
 </head>
 <body>
@@ -277,7 +282,7 @@ body.fullscreen #sidebar { display: none; }
     </div>
 
     <!-- 自选列表 (flex:1，内部滚动) -->
-    <div style="flex:1; overflow-y:auto; padding:6px 10px; border-bottom:1px solid var(--border); min-height:0;">
+    <div style="flex:1; overflow-y:auto; padding:6px 0 6px 10px; border-bottom:1px solid var(--border); min-height:0;">
       <div id="watchlist"></div>
     </div>
 
@@ -291,7 +296,7 @@ body.fullscreen #sidebar { display: none; }
     </div>
 
     <!-- 历史信号 (固定120px) -->
-    <div style="flex-shrink:0; height:120px; overflow:hidden; padding:6px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column;">
+    <div style="flex-shrink:0; height:120px; overflow:hidden; padding:6px 0 6px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column;">
       <div class="s-title" style="margin-bottom:4px;">📋 历史信号</div>
       <div id="hist-list" style="flex:1; overflow-y:auto; min-height:0;"></div>
     </div>
