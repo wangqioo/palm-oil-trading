@@ -68,6 +68,61 @@ _PERIOD_LABEL = {
     '60':'60分','120':'120分','daily':'日线','weekly':'周线',
 }
 
+# ── 品种交易时段（夜盘结束时间，单位：分钟；night_next=True 表示跨越次日凌晨）────
+_SYMBOL_NIGHT_END = {
+    'P0':  (23 * 60,        False),  # 大商所棕榈油      23:00
+    'AG0': ( 2 * 60 + 30,  True),   # 上期所白银        次日 02:30
+    'BC0': ( 1 * 60,        True),   # 上期能源国际铜    次日 01:00
+    'CU0': ( 1 * 60,        True),   # 上期所铜          次日 01:00
+    'SA0': (23 * 60,        False),  # 郑商所纯碱        23:00
+    'SC0': ( 2 * 60 + 30,  True),   # 上期能源原油      次日 02:30
+    'SN0': ( 1 * 60,        True),   # 上期所锡          次日 01:00
+}
+
+def get_market_status(symbol, now=None):
+    """返回品种当前交易状态。
+    status: 'trading' | 'lunch' | 'closed'
+    next_open: 下次开市时间字符串（交易中时为 None）
+    """
+    if now is None:
+        now = datetime.now()
+    wd = now.weekday()              # 0=周一 … 5=周六 6=周日
+    t  = now.hour * 60 + now.minute # 当前时间（分钟）
+
+    night_end, night_next = _SYMBOL_NIGHT_END.get(symbol, (15 * 60, False))
+
+    # 周六：仅跨午夜品种的夜盘尾段（周五夜盘延续）
+    if wd == 5:
+        if night_next and t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '周一 09:00'}
+
+    # 周日：全天闭市
+    if wd == 6:
+        return {'status': 'closed', 'next_open': '周一 09:00'}
+
+    # 午休 11:30–13:00
+    if 11 * 60 + 30 <= t < 13 * 60:
+        return {'status': 'lunch', 'next_open': '13:00'}
+
+    # 日盘 09:00–11:30、13:00–15:00
+    if (9 * 60 <= t < 11 * 60 + 30) or (13 * 60 <= t < 15 * 60):
+        return {'status': 'trading', 'next_open': None}
+
+    # 日盘后至夜盘前 15:00–21:00
+    if 15 * 60 <= t < 21 * 60:
+        return {'status': 'closed', 'next_open': '21:00'}
+
+    # 夜盘 21:00 以后（或凌晨跨午夜段）
+    if night_next:
+        if t >= 21 * 60 or t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '09:00'}
+    else:
+        if 21 * 60 <= t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '09:00'}
+
 def _is_kline_close(period):
     """判断当前时刻是否恰好是该周期K线的收盘时刻。"""
     now = datetime.now()
@@ -83,7 +138,13 @@ def _is_kline_close(period):
         'weekly': wd == 4 and h == 15 and m == 1,
     }.get(period, False)
 
+# 各周期对应的分钟数（用于判断是否属于分钟线周期）
+_PERIOD_MINUTES = {
+    '1': 1, '5': 5, '15': 15, '30': 30, '60': 60, '120': 120,
+}
+
 def _do_scan(period):
+    now = datetime.now()
     for sym_code, sym_cfg in SYMBOLS.items():
         try:
             data = get_data(symbol=sym_code, period=period, name=sym_cfg['name'])
@@ -94,6 +155,14 @@ def _do_scan(period):
             candle_time = meta.get('datetime', '')
             if not candle_time:
                 continue
+
+            # 交易时段检查：非交易时段不推信号
+            if period in _PERIOD_MINUTES:
+                ms = get_market_status(sym_code, now)
+                if ms['status'] != 'trading':
+                    print(f"[scanner] {sym_code} {ms['status']}，跳过")
+                    continue
+
             for sig_type in ('做多', '做空'):
                 if sig.get(sig_type) and _is_new_signal(sym_code, sig_type, candle_time):
                     push_pending_signal({
@@ -571,6 +640,13 @@ def api_period_settings():
             return jsonify({"period": _active_period})
 
 
+@app.route("/api/market_status")
+def api_market_status():
+    """返回品种当前交易状态（trading/lunch/closed）及下次开市时间。"""
+    symbol = request.args.get('symbol', 'P0')
+    return jsonify(get_market_status(symbol))
+
+
 @app.route("/api/indicators")
 def api_indicators():
     """列出所有已加载的指标插件"""
@@ -622,26 +698,6 @@ def api_import_formula():
     return jsonify({"ok": True, "id": plugin_id, "name": name,
                     "outputs": parser.build_meta_outputs()})
 
-
-@app.route("/api/test/signal", methods=["POST"])
-def api_test_signal():
-    """测试用：直接注入一条信号到队列，前端立即消费。
-    sigType 支持 'long'/'做多' 和 'short'/'做空'，避免编码问题。
-    """
-    body = request.get_json(force=True)
-    # 归一化 sigType：接受英文/中文两种写法
-    raw = body.get('sigType', 'short')
-    if raw in ('long', 'buy', '做多', 'LONG'):
-        body['sigType'] = '做多'
-    else:
-        body['sigType'] = '做空'
-    body.setdefault('symbol', 'P0')
-    body.setdefault('name',   '棕榈油主力')
-    body.setdefault('period', '30')
-    body.setdefault('price',  9781)
-    body.setdefault('time',   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    push_pending_signal(body)
-    return jsonify({"ok": True, "sigType": body['sigType'], "period": body['period']})
 
 
 @app.route("/")

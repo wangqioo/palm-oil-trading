@@ -17,6 +17,58 @@ _PERIOD_LABEL = {
     '60':'60分','120':'120分','daily':'日线','weekly':'周线',
 }
 
+# ── 品种交易时段（夜盘结束时间，单位：分钟；night_next=True 表示跨越次日凌晨）────
+_SYMBOL_NIGHT_END = {
+    'P0':  (23 * 60,        False),  # 大商所棕榈油      23:00
+    'AG0': ( 2 * 60 + 30,  True),   # 上期所白银        次日 02:30
+    'BC0': ( 1 * 60,        True),   # 上期能源国际铜    次日 01:00
+    'CU0': ( 1 * 60,        True),   # 上期所铜          次日 01:00
+    'SA0': (23 * 60,        False),  # 郑商所纯碱        23:00
+    'SC0': ( 2 * 60 + 30,  True),   # 上期能源原油      次日 02:30
+    'SN0': ( 1 * 60,        True),   # 上期所锡          次日 01:00
+}
+
+_MINUTE_PERIODS = {'1','5','15','30','60','120'}
+
+
+def get_market_status(symbol, now=None):
+    """返回品种当前交易状态。
+    status: 'trading' | 'lunch' | 'closed'
+    next_open: 下次开市时间字符串（交易中时为 None）
+    """
+    if now is None:
+        now = datetime.datetime.now()
+    wd = now.weekday()
+    t  = now.hour * 60 + now.minute
+
+    night_end, night_next = _SYMBOL_NIGHT_END.get(symbol, (15 * 60, False))
+
+    if wd == 5:
+        if night_next and t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '周一 09:00'}
+
+    if wd == 6:
+        return {'status': 'closed', 'next_open': '周一 09:00'}
+
+    if 11 * 60 + 30 <= t < 13 * 60:
+        return {'status': 'lunch', 'next_open': '13:00'}
+
+    if (9 * 60 <= t < 11 * 60 + 30) or (13 * 60 <= t < 15 * 60):
+        return {'status': 'trading', 'next_open': None}
+
+    if 15 * 60 <= t < 21 * 60:
+        return {'status': 'closed', 'next_open': '21:00'}
+
+    if night_next:
+        if t >= 21 * 60 or t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '09:00'}
+    else:
+        if 21 * 60 <= t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '09:00'}
+
 
 # ── 数据库去重 ─────────────────────────────────────────────────────
 
@@ -89,8 +141,16 @@ def _push_signal(signal_dict):
 # ── 扫描逻辑 ──────────────────────────────────────────────────────
 
 def _do_scan(period, get_data, SYMBOLS):
+    now = datetime.datetime.now()
     for sym_code, sym_cfg in SYMBOLS.items():
         try:
+            # 交易时段检查：非交易时段不推信号
+            if period in _MINUTE_PERIODS:
+                ms = get_market_status(sym_code, now)
+                if ms['status'] != 'trading':
+                    print(f"[scheduler] {sym_code} {ms['status']}，跳过")
+                    continue
+
             data = get_data(symbol=sym_code, period=period, name=sym_cfg['name'])
             if not data or data.get('error'):
                 continue
@@ -119,7 +179,7 @@ if __name__ == '__main__':
 
     _init_db()
     print(f"[scheduler] 启动，推送目标: {SERVER_URL}")
-    print(f"[scheduler] 每分钟扫描一次，只在K线收盘时刻推送信号")
+    print(f"[scheduler] 每分钟扫描一次，只在K线收盘且交易时段内推送信号")
 
     while True:
         try:

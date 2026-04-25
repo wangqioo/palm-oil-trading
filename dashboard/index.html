@@ -197,6 +197,9 @@ body.fullscreen #sidebar { display: none; }
 .period-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; background: rgba(88,166,255,.18); color: var(--accent); margin-left: 4px; vertical-align: middle; }
 /* 实时时钟 */
 #hdr-clock { color: #888888; font-size: 12px; flex-shrink: 0; font-family: monospace; }
+/* 交易状态灯 */
+#market-status { display: flex; align-items: center; gap: 4px; font-size: 12px; flex-shrink: 0; }
+#ms-emoji { font-size: 11px; line-height: 1; }
 </style>
 </head>
 <body>
@@ -204,6 +207,7 @@ body.fullscreen #sidebar { display: none; }
 <div id="header">
   <span id="hdr-name" class="contract">期货看板</span>
   <span id="hdr-contract" style="color:var(--muted);font-size:12px">P2609</span>
+  <div id="market-status"><span id="ms-emoji">⚫</span><span id="ms-text" style="color:var(--muted)">--</span></div>
   <div class="sep"></div>
   <span id="hdr-price" class="price" style="color:var(--bull)">--</span>
   <span id="hdr-chg" class="chg up">--</span>
@@ -386,6 +390,33 @@ const _sessionStart = new Date().toLocaleString('sv').replace('T', ' ');
   tick();
   setInterval(tick, 1000);
 })();
+
+// ── 交易状态灯 ──────────────────────────────────────────
+function updateMarketStatus() {
+  fetch(`/api/market_status?symbol=${encodeURIComponent(currentSymbol)}`)
+    .then(r => r.json())
+    .then(s => {
+      const emoji = document.getElementById('ms-emoji');
+      const text  = document.getElementById('ms-text');
+      if (!emoji || !text) return;
+      if (s.status === 'trading') {
+        emoji.textContent = '🟢';
+        text.textContent  = '交易中';
+        text.style.color  = '#4caf50';
+      } else if (s.status === 'lunch') {
+        emoji.textContent = '🟡';
+        text.textContent  = `午休中 | ${s.next_open} 恢复`;
+        text.style.color  = '#FFD700';
+      } else {
+        emoji.textContent = '⚫';
+        text.textContent  = `已闭市 | ${s.next_open} 开市`;
+        text.style.color  = 'var(--muted)';
+      }
+    })
+    .catch(() => {});
+}
+updateMarketStatus();
+setInterval(updateMarketStatus, 60000);
 
 // 将 lightweight-charts Unix秒时间戳格式化为可读字符串
 function fmtBarTime(t) {
@@ -752,6 +783,7 @@ async function loadData(mode = 'full') {
     if (_loadAbort) { _loadAbort.abort(); }
     _loadAbort = new AbortController();
     document.getElementById('loading').classList.remove('hidden');
+    updateMarketStatus();
   }
   try {
     const res = await fetch(url, mode === 'full' ? { signal: _loadAbort.signal } : {});
