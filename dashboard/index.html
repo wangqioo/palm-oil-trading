@@ -33,7 +33,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 
 #main { display: flex; flex: 1; overflow: hidden; }
 
-#sidebar { width: 240px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); overflow-y: auto; }
+#sidebar { width: 240px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
 .s-card { padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .s-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; }
 .signal-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
@@ -159,6 +159,44 @@ body.fullscreen #sidebar { display: none; }
   60%       { transform: translateX(-10px); }
   80%       { transform: translateX(10px); }
 }
+@keyframes sig-shake-counter {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(14px); }
+  40%       { transform: translateX(-14px); }
+  60%       { transform: translateX(10px); }
+  80%       { transform: translateX(-10px); }
+}
+.signal-alert-inner { animation: sig-shake-counter 0.25s linear infinite; }
+/* 多周期趋势面板 */
+.trend-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 12px; border-bottom: 1px solid rgba(48,54,61,.4); }
+.trend-row:last-child { border: none; }
+.trend-period { color: var(--muted); min-width: 40px; }
+.trend-status { font-weight: 700; font-size: 11px; flex: 1; padding-left: 6px; }
+.trend-status.bull    { color: var(--bull); }
+.trend-status.bear    { color: var(--bear); }
+.trend-status.wait    { color: #FFD700; }
+.trend-status.unknown { color: var(--muted); }
+.trend-kd { color: var(--muted); font-size: 10px; font-family: monospace; }
+.trend-resonance { padding: 5px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+.trend-resonance.bull  { background: rgba(239,83,80,.18);  color: var(--bull); }
+.trend-resonance.bear  { background: rgba(38,166,154,.18); color: var(--bear); }
+.trend-resonance.mixed { background: rgba(255,193,7,.12);  color: #FFC107; }
+/* 弹窗周期选择器 */
+.alert-period-wrap { position: relative; }
+.alert-period-dropdown { position: absolute; top: calc(100% + 4px); right: 0; width: 160px; background: #1a1a1a; border: 1px solid var(--border); border-radius: 6px; z-index: 300; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+.alert-period-dropdown.up { top: auto; bottom: calc(100% + 4px); }
+.alert-period-dropdown.open { display: block; }
+.alert-period-item { padding: 7px 10px; cursor: pointer; font-size: 12px; display: flex; justify-content: space-between; align-items: center; transition: background .1s; }
+.alert-period-item:hover { background: rgba(88,166,255,.12); }
+.alert-period-item.active { color: var(--accent); font-weight: 600; }
+.alert-period-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+/* 共振弹窗 */
+.signal-alert.resonance.long  { border-color: #FF6600; box-shadow: 0 0 80px rgba(255,102,0,.7), 0 0 150px rgba(255,102,0,.3), 0 8px 40px rgba(0,0,0,.9); }
+.signal-alert.resonance.short { border-color: #00FFAA; box-shadow: 0 0 80px rgba(0,255,170,.7), 0 0 150px rgba(0,255,170,.3), 0 8px 40px rgba(0,0,0,.9); }
+/* 周期标签 */
+.period-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; background: rgba(88,166,255,.18); color: var(--accent); margin-left: 4px; vertical-align: middle; }
+/* 实时时钟 */
+#hdr-clock { color: #888888; font-size: 12px; flex-shrink: 0; font-family: monospace; }
 </style>
 </head>
 <body>
@@ -169,8 +207,6 @@ body.fullscreen #sidebar { display: none; }
   <div class="sep"></div>
   <span id="hdr-price" class="price" style="color:var(--bull)">--</span>
   <span id="hdr-chg" class="chg up">--</span>
-  <div class="sep"></div>
-  <span id="hdr-ts" class="ts">--</span>
   <div class="spacer"></div>
   <div class="period-btns">
     <button class="period-btn" data-p="1">1分</button>
@@ -180,12 +216,13 @@ body.fullscreen #sidebar { display: none; }
     <button class="period-btn" data-p="60">60分</button>
     <button class="period-btn" data-p="120">120分</button>
     <button class="period-btn" data-p="daily">日线</button>
+    <button class="period-btn" data-p="weekly">周线</button>
   </div>
-  <div class="sep"></div>
-  <button class="period-btn" id="btn-import" style="padding:4px 12px;">导入公式</button>
   <button class="icon-btn" id="btn-bell" title="未读信号" style="position:relative">🔔<span id="bell-badge"></span></button>
   <button class="icon-btn" id="btn-refresh" title="刷新">⟳</button>
   <button class="icon-btn" id="btn-fs" title="全屏/还原">⛶</button>
+  <div class="sep"></div>
+  <span id="hdr-clock"></span>
 </div>
 
 <!-- 导入公式模态框 -->
@@ -222,48 +259,58 @@ body.fullscreen #sidebar { display: none; }
 
 <div id="main">
   <div id="sidebar">
-    <div class="s-card">
-      <div class="s-title">自选</div>
-      <!-- 搜索框 -->
-      <div class="wl-search-wrap">
-        <input id="wl-search" class="wl-search" placeholder="搜索品种或代码…" autocomplete="off">
+    <!-- 搜索+添加区域 (固定60px) -->
+    <div style="flex-shrink:0; height:60px; overflow:hidden; padding:8px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; justify-content:center;">
+      <div class="wl-search-wrap" style="margin-bottom:0;">
+        <input id="wl-search" class="wl-search" placeholder="搜索或输入合约代码添加…" autocomplete="off">
         <div id="wl-dropdown" class="wl-dropdown"></div>
       </div>
-      <!-- 直接输入合约代码添加 -->
-      <div class="wl-add-row">
+      <!-- 隐藏的添加控件，供 JS 引用 -->
+      <div class="wl-add-row" style="display:none;">
         <input id="wl-add-input" class="wl-add-input" placeholder="如 RB2510" autocomplete="off">
         <button id="wl-add-btn" class="wl-add-btn">+ 添加</button>
       </div>
-      <!-- 自选列表 -->
-      <div id="watchlist" style="margin-top:10px"></div>
     </div>
-    <div class="s-card">
-      <div class="s-title">当前信号</div>
-      <div id="sig-badge" class="signal-badge wait">◉ 等待信号</div>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
-        <div id="status-po"   style="padding:6px 10px;border-radius:6px;background:rgba(125,133,144,.1);font-size:13px;color:var(--muted);transition:all .2s;">🟡 黄点破浪：未触发</div>
-        <div id="status-kong" style="padding:6px 10px;border-radius:6px;background:rgba(125,133,144,.1);font-size:13px;color:var(--muted);transition:all .2s;">🟢 绿点空仓：未触发</div>
+
+    <!-- 自选列表 (flex:1，内部滚动) -->
+    <div style="flex:1; overflow-y:auto; padding:6px 10px; border-bottom:1px solid var(--border); min-height:0;">
+      <div id="watchlist"></div>
+    </div>
+
+    <!-- 当前信号状态 (固定80px) -->
+    <div style="flex-shrink:0; height:80px; overflow:hidden; padding:6px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; gap:4px;">
+      <div id="sig-badge" class="signal-badge wait" style="margin-bottom:0;">◉ 等待信号</div>
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <div id="status-po"   style="padding:3px 8px;border-radius:6px;background:rgba(125,133,144,.1);font-size:11px;color:var(--muted);transition:all .2s;">🟡 黄点破浪：未触发</div>
+        <div id="status-kong" style="padding:3px 8px;border-radius:6px;background:rgba(125,133,144,.1);font-size:11px;color:var(--muted);transition:all .2s;">🟢 绿点空仓：未触发</div>
       </div>
     </div>
-    <div class="s-card">
-      <div class="s-title">历史信号</div>
-      <div id="hist-list"></div>
+
+    <!-- 历史信号 (固定120px) -->
+    <div style="flex-shrink:0; height:120px; overflow:hidden; padding:6px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column;">
+      <div class="s-title" style="margin-bottom:4px;">📋 历史信号</div>
+      <div id="hist-list" style="flex:1; overflow-y:auto; min-height:0;"></div>
     </div>
-    <div class="s-card">
-      <div class="s-title">设置</div>
-      <div class="metric-row" style="align-items:center;">
-        <span class="lbl">弹窗时效</span>
-        <select id="popup-duration-sel" style="background:#111;border:1px solid #2a2a2a;border-radius:4px;color:#e6edf3;font-size:12px;padding:3px 8px;outline:none;cursor:pointer;">
-          <option value="5">5分钟</option>
-          <option value="10">10分钟</option>
-          <option value="15" selected>15分钟</option>
-          <option value="20">20分钟</option>
-          <option value="30">30分钟</option>
-          <option value="never">不自动消失</option>
-        </select>
+
+    <!-- 多周期趋势 (固定180px) -->
+    <div style="flex-shrink:0; height:180px; overflow:hidden; padding:8px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column;">
+      <div class="s-title" style="margin-bottom:6px;">📊 多周期趋势</div>
+      <div id="trend-resonance-msg" style="display:none"></div>
+      <div id="trend-panel-list" style="flex:1; overflow:hidden;"><div style="color:var(--muted);font-size:11px;padding:4px 0">加载中…</div></div>
+      <div id="trend-refresh-btn" style="margin-top:4px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none;flex-shrink:0;">↻ 刷新趋势</div>
+    </div>
+
+    <!-- 设置 (固定50px，触发周期) -->
+    <div style="flex-shrink:0; height:50px; display:flex; align-items:center; padding:0 12px; gap:8px; border-top:1px solid var(--border);">
+      <span style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.8px;">⚙️ 设置</span>
+      <div style="flex:1;"></div>
+      <span style="font-size:11px;color:var(--muted);">触发周期</span>
+      <div class="alert-period-wrap" style="position:relative;">
+        <button class="icon-btn" id="btn-alert-period" title="触发周期" style="width:auto;padding:0 10px;font-size:11px;gap:4px;"><span id="alert-period-label">30分</span>&nbsp;▼</button>
+        <div id="alert-period-dropdown" class="alert-period-dropdown up"></div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;">夜盘(21:00后)自动延长至30分钟</div>
     </div>
+
   </div>
 
   <div id="charts-area">
@@ -322,6 +369,67 @@ let subCharts = [];
 let extremeLine10, extremeLine90;
 let activePriceLines = [];
 let viewInitialized = false;
+
+// 页面会话开始时间（ISO字符串），用于过滤本次连接之前产生的历史信号
+const _sessionStart = new Date().toLocaleString('sv').replace('T', ' ');
+
+// ── 实时时钟 ──────────────────────────────────────────
+(function startClock() {
+  function tick() {
+    const now = new Date();
+    const el = document.getElementById('hdr-clock');
+    if (el) el.textContent = now.toLocaleString('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// 将 lightweight-charts Unix秒时间戳格式化为可读字符串
+function fmtBarTime(t) {
+  const d = new Date(t * 1000);
+  const y = d.getFullYear();
+  const M = String(d.getMonth() + 1).padStart(2, '0');
+  const D = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return (currentPeriod === 'daily' || currentPeriod === 'weekly')
+    ? `${y}-${M}-${D}`
+    : `${y}-${M}-${D} ${h}:${m}`;
+}
+
+// 更新 K线图内左上角 OHLC + 时间（不传 bar 时读末根 K 线）
+function updateKlineLegend(bar) {
+  const el = document.getElementById('legend-kline');
+  if (!el) return;
+  if (!bar && allData && allData.indicator_series?.length) {
+    bar = allData.indicator_series[allData.indicator_series.length - 1];
+  }
+  if (!bar) return;
+  const d = new Date(bar.time * 1000);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  const timeStr = (currentPeriod === 'daily' || currentPeriod === 'weekly')
+    ? `${y}-${mo}-${dy}` : `${y}-${mo}-${dy} ${h}:${mi}:${s}`;
+  el.innerHTML =
+    `<span style="color:#b0bec5">O <b>${bar.open?.toFixed(0)}</b></span>` +
+    `<span style="color:#ef5350">H <b>${bar.high?.toFixed(0)}</b></span>` +
+    `<span style="color:#26a69a">L <b>${bar.low?.toFixed(0)}</b></span>` +
+    `<span style="color:#e6edf3">C <b>${bar.close?.toFixed(0)}</b></span>` +
+    `<span style="color:#7d8590"> | ${timeStr}</span>`;
+}
+
+// ── 多周期配置 ────────────────────────────────────────
+const ALERT_PERIOD_DURATIONS = { '15':8, '30':15, '60':30, '120':60, 'daily':240, 'weekly':1440 }; // 分钟
+const ALERT_PERIOD_LABELS    = { '15':'15分', '30':'30分', '60':'60分', '120':'120分', 'daily':'日线', 'weekly':'周线' };
+const SCAN_INTERVALS_MS      = { '15':5*60000, '30':5*60000, '60':15*60000, '120':30*60000, 'daily':Infinity, 'weekly':Infinity };
+const _lastScanTime = {}; // 'symbol|period' -> timestamp
 
 const COMMON = {
   layout: { background: { color: '#000000' }, textColor: '#888888' },
@@ -614,15 +722,13 @@ function drawSubCanvas(entry, bars) {
 // ── Legend ───────────────────────────────────────────
 function setupLegends() {
   kChart.subscribeCrosshairMove(p => {
-    const el = document.getElementById('legend-kline');
-    if (!p.time) { el.innerHTML = ''; return; }
+    if (!p.time) {
+      updateKlineLegend();  // 恢复末根K线 OHLC + 时间
+      return;
+    }
     const d = p.seriesData.get(candleSeries);
     if (!d) return;
-    el.innerHTML =
-      `<span style="color:#b0bec5">O <b>${d.open?.toFixed(0)}</b></span>` +
-      `<span style="color:#ef5350">H <b>${d.high?.toFixed(0)}</b></span>` +
-      `<span style="color:#26a69a">L <b>${d.low?.toFixed(0)}</b></span>` +
-      `<span style="color:#e6edf3">C <b>${d.close?.toFixed(0)}</b></span>`;
+    updateKlineLegend({ open: d.open, high: d.high, low: d.low, close: d.close, time: p.time });
   });
 
   bsdChart.subscribeCrosshairMove(p => {
@@ -638,13 +744,17 @@ function setupLegends() {
 }
 
 // ── 数据加载 ─────────────────────────────────────────
+let _loadAbort = null;  // 取消上一次未完成的 full 请求
+
 async function loadData(mode = 'full') {
   const url = `${API}?period=${currentPeriod}&symbol=${currentSymbol}&name=${encodeURIComponent(currentSymbolName)}&mode=${mode}`;
   if (mode === 'full') {
+    if (_loadAbort) { _loadAbort.abort(); }
+    _loadAbort = new AbortController();
     document.getElementById('loading').classList.remove('hidden');
   }
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, mode === 'full' ? { signal: _loadAbort.signal } : {});
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     if (mode === 'update' && allData) {
@@ -652,7 +762,7 @@ async function loadData(mode = 'full') {
       updateBars(data.indicator_series || []);
       updateHeader(data);
       updateSidebar(data);
-      checkAndNotify(data);
+      checkAndNotify(data, currentPeriod);
       // 把新bar合并进allData供canvas使用
       const newBars = data.indicator_series || [];
       newBars.forEach(nb => {
@@ -665,6 +775,7 @@ async function loadData(mode = 'full') {
       renderAll(data);
     }
   } catch(e) {
+    if (e.name === 'AbortError') return;  // 被新请求取消，静默忽略
     if (mode === 'full') {
       document.getElementById('loading').innerHTML = `<span style="color:#ef5350">加载失败: ${e.message}</span>`;
       return;
@@ -694,6 +805,8 @@ function updateBars(bars) {
   });
   // canvas 重绘波段王（轻量）
   requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
+  // 增量刷新后同步末根K线时间（若十字线不在激活状态）
+  updateKlineLegend();
 }
 
 function renderAll(data) {
@@ -787,10 +900,13 @@ function renderAll(data) {
 
   updateHeader(data);
   updateSidebar(data);
-  checkAndNotify(data);
+  checkAndNotify(data, currentPeriod);
 
   // 刷新所有动态副图
   subCharts.forEach(s => renderSubChart(s, bars));
+
+  // 初始化K线图内时间：显示末根K线开盘时间
+  updateKlineLegend();
 }
 
 // ── 波段王 canvas 色块柱（STICKLINE K/D 之间，红=多/绿=空）──
@@ -835,7 +951,6 @@ function updateHeader(data) {
   const meta = data.meta || {};
   document.getElementById('hdr-name').textContent = data.name || '期货看板';
   document.getElementById('hdr-contract').textContent = data.symbol || '';
-  document.getElementById('hdr-ts').textContent = data.updated || '';
   const price = meta.close;
   if (price) {
     document.getElementById('hdr-price').textContent = price.toFixed(0);
@@ -878,7 +993,9 @@ function updateSidebar(data) {
   kongEl.style.color      = kongOn ? '#00CC00' : 'var(--muted)';
 
   const histList = document.getElementById('hist-list');
+  if (!histList) return;
   histList.innerHTML = '';
+  const periodLbl = data.period ? (ALERT_PERIOD_LABELS[data.period] || data.period) : '';
   (data.history || []).forEach(h => {
     const r = document.createElement('div');
     r.className = 'hist-item';
@@ -886,8 +1003,9 @@ function updateSidebar(data) {
     const dateStr = h.date.replace(' 00:00', '');
     const expired = _expiredKeys.has(`${data.symbol}|${h.date}`);
     if (expired) r.classList.add('hist-expired');
+    const pTag = periodLbl ? `<span class="period-tag">${periodLbl}</span>` : '';
     r.innerHTML = `<span>${dateStr}</span><span>${h.close}</span>` +
-      `<span class="${cls}">${h.signal}${expired ? '<span class="hist-expired-tag">已过期</span>' : ''}</span>`;
+      `<span class="${cls}">${h.signal}${pTag}${expired ? '<span class="hist-expired-tag">已过期</span>' : ''}</span>`;
     histList.appendChild(r);
   });
 }
@@ -966,10 +1084,10 @@ function initRightAnchorZoom() {
   });
 }
 
-// ── 按钮 ─────────────────────────────────────────────
-document.querySelectorAll('.period-btn').forEach(btn => {
+// ── 按钮（只处理有 data-p 的周期按钮，排除 btn-import / btn-alert-period）──
+document.querySelectorAll('.period-btn[data-p]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.period-btn[data-p]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPeriod = btn.dataset.p;
     viewInitialized = false;
@@ -1115,25 +1233,35 @@ searchInput.addEventListener('input', () => {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
       const items = await res.json();
       if (!items.length) {
-        dropdown.innerHTML = '<div class="wl-drop-searching">无匹配品种</div>';
+        dropdown.innerHTML = '<div class="wl-drop-searching">无匹配品种，按 Enter 直接添加合约代码</div>';
         return;
       }
       dropdown.innerHTML = '';
       items.forEach(it => {
         const d = document.createElement('div');
         d.className = 'wl-drop-item';
-        d.innerHTML = `<span class="di-name">${it.name}</span><span class="di-meta">${it.prefix}××××</span>`;
+        d.innerHTML = `<span class="di-name">${it.name}</span><span class="di-meta">${it.prefix}0 主力连续</span>`;
         d.addEventListener('click', () => {
-          // 把前缀填到"添加合约"输入框，让用户补全月份
-          document.getElementById('wl-add-input').value = it.prefix;
-          document.getElementById('wl-add-input').focus();
+          const sym = it.prefix + '0';
           searchInput.value = '';
           dropdown.classList.remove('open');
+          addToWatchlist(sym, it.name);
         });
         dropdown.appendChild(d);
       });
     } catch { dropdown.innerHTML = '<div class="wl-drop-searching">搜索失败</div>'; }
   }, 300);
+});
+
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const val = searchInput.value.trim();
+    if (val) {
+      searchInput.value = '';
+      dropdown.classList.remove('open');
+      addToWatchlist(val);
+    }
+  }
 });
 
 document.addEventListener('click', e => {
@@ -1166,20 +1294,128 @@ window.addEventListener('resize', () => {
   if (allData) drawBsdCanvas(allData.indicator_series);
 });
 
-// ── 全自选扫描 ────────────────────────────────────────
-// 记录每个品种上次通知的状态，避免重复弹
+// ── 全自选扫描（多周期支持）────────────────────────────
 const _watchlistNotified = {};
 
+// 页面刚加载时设为 true：第一轮扫描只录状态，不弹窗；完成后自动关闭
+let _silentInit = true;
+
 async function scanAllWatchlist() {
+  const silent = _silentInit;   // 本轮是否静默（页面加载后第一次）
+  const alertPeriods = getAlertPeriods();
   const list = loadWatchlist();
+  const now = Date.now();
+
   for (const item of list) {
-    try {
-      // 信号判断固定用30分钟，不受图表当前周期影响
-      const res = await fetch(`${API}?period=30&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
-      const data = await res.json();
-      if (data.error) continue;
-      checkAndNotify(data);
-    } catch(e) {}
+    const triggered = {}; // period -> {sigType, data}
+
+    for (const period of alertPeriods) {
+      // 按周期限速：避免过于频繁的 API 调用
+      const minInterval = SCAN_INTERVALS_MS[period] ?? 5 * 60000;
+      const scanKey = `${item.symbol}|${period}`;
+      if (_lastScanTime[scanKey] && now - _lastScanTime[scanKey] < minInterval) continue;
+
+      try {
+        const res = await fetch(`${API}?period=${period}&symbol=${item.symbol}&name=${encodeURIComponent(item.name)}&mode=update`);
+        const scanData = await res.json();
+        if (scanData.error) continue;
+        _lastScanTime[scanKey] = now;
+
+        const sig  = scanData.signals || {};
+        const meta = scanData.meta    || {};
+        const sigTime = meta.datetime || '';
+        const notifyKey = `${item.symbol}|${period}`;
+        if (!_watchlistNotified[notifyKey]) _watchlistNotified[notifyKey] = {};
+        const prev = _watchlistNotified[notifyKey];
+
+        if (sig['做多'] && !(prev.type === '做多' && prev.time === sigTime)) {
+          prev.type = '做多'; prev.time = sigTime;
+          if (!silent) triggered[period] = { sigType: '做多', data: scanData };
+        } else if (sig['做空'] && !(prev.type === '做空' && prev.time === sigTime)) {
+          prev.type = '做空'; prev.time = sigTime;
+          if (!silent) triggered[period] = { sigType: '做空', data: scanData };
+        }
+      } catch(e) {}
+    }
+
+    if (silent) continue;  // 静默模式：只录状态，不弹
+
+    // 共振检测
+    const entries = Object.entries(triggered);
+    if (entries.length === 0) continue;
+    const longs  = entries.filter(([, v]) => v.sigType === '做多');
+    const shorts = entries.filter(([, v]) => v.sigType === '做空');
+
+    if (longs.length >= 2) {
+      const lastEntry = longs[longs.length - 1];
+      showResonanceToast(lastEntry[1].data, longs.map(([p]) => p), '做多');
+    } else if (shorts.length >= 2) {
+      const lastEntry = shorts[shorts.length - 1];
+      showResonanceToast(lastEntry[1].data, shorts.map(([p]) => p), '做空');
+    } else {
+      for (const [period, { sigType, data: scanData }] of entries) {
+        showSignalToast(scanData, sigType, period);
+      }
+    }
+  }
+
+  // 第一次扫描完成后解除静默，此后正常弹窗
+  if (silent) _silentInit = false;
+}
+
+// ── 多周期趋势面板 ────────────────────────────────────
+
+async function updateTrendPanel() {
+  try {
+    const res = await fetch(`/api/trend?symbol=${currentSymbol}&name=${encodeURIComponent(currentSymbolName)}`);
+    const data = await res.json();
+    renderTrendPanel(data);
+  } catch(e) {
+    const list = document.getElementById('trend-panel-list');
+    if (list) list.innerHTML = '<div style="color:var(--muted);font-size:11px">趋势加载失败</div>';
+  }
+}
+
+function renderTrendPanel(data) {
+  if (!data || !data.trend) return;
+  const trend = data.trend;
+  const order = [['weekly','周线'],['daily','日线'],['120','120分'],['60','60分'],['30','30分'],['15','15分']];
+  const statusIcon = { bull:'🔴 多头', bear:'🟢 空头', wait:'🟡 等待', unknown:'⚫ --' };
+
+  const list = document.getElementById('trend-panel-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  order.forEach(([p, lbl]) => {
+    const t = trend[p] || {};
+    const row = document.createElement('div');
+    row.className = 'trend-row';
+    const kdText = (t.K != null && t.D != null) ? `K${t.K.toFixed(0)}/D${t.D.toFixed(0)}` : '';
+    row.innerHTML =
+      `<span class="trend-period">${lbl}</span>` +
+      `<span class="trend-status ${t.status || 'unknown'}">${statusIcon[t.status] || '⚫ --'}</span>` +
+      `<span class="trend-kd">${kdText}</span>`;
+    list.appendChild(row);
+  });
+
+  // 共振提示
+  const valid = order.filter(([p]) => trend[p]?.status && trend[p]?.status !== 'unknown');
+  const bulls = valid.filter(([p]) => trend[p].status === 'bull').length;
+  const bears = valid.filter(([p]) => trend[p].status === 'bear').length;
+  const msg = document.getElementById('trend-resonance-msg');
+  if (!msg) return;
+
+  if (valid.length > 0 && bulls === valid.length) {
+    msg.textContent = '🔴🔴 强势多头共振';
+    msg.className = 'trend-resonance bull'; msg.style.display = 'block';
+  } else if (valid.length > 0 && bears === valid.length) {
+    msg.textContent = '🟢🟢 强势空头共振';
+    msg.className = 'trend-resonance bear'; msg.style.display = 'block';
+  } else if (bulls > 0 && bears > 0) {
+    msg.textContent = '⚠️ 趋势分歧，谨慎操作';
+    msg.className = 'trend-resonance mixed'; msg.style.display = 'block';
+  } else {
+    msg.style.display = 'none';
   }
 }
 
@@ -1207,17 +1443,108 @@ function playAlertSound() {
   } catch(e) {}
 }
 
-// ── 弹窗状态管理 ──────────────────────────────────────
+// ── 弹窗周期管理 ──────────────────────────────────────
 
-function getPopupDuration() {
-  const v = localStorage.getItem('popup_duration') || '15';
-  return v === 'never' ? null : parseInt(v) * 60000;
+function getAlertPeriods() {
+  try { return JSON.parse(localStorage.getItem('alert_periods')) || ['30']; }
+  catch { return ['30']; }
 }
-function getEffectiveDuration() {
-  const base = getPopupDuration();
-  if (!base) return null;
+function setAlertPeriods(periods) {
+  localStorage.setItem('alert_periods', JSON.stringify(periods));
+  updateAlertPeriodLabel();
+  renderAlertPeriodDropdown();
+  // 同步更新设置面板显示
+  const td = document.getElementById('trigger-period-display');
+  if (td) td.textContent = (periods.length === 1 ? (ALERT_PERIOD_LABELS[periods[0]] || periods[0]) : periods.length + '周期') + ' ▶';
+  // 通知后端切换扫描周期（多选时取第一个周期）
+  const backendPeriod = periods[0] || '30';
+  fetch('/api/settings/period', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ period: backendPeriod }),
+  }).catch(() => {});
+}
+function updateAlertPeriodLabel() {
+  const p = getAlertPeriods();
+  const el = document.getElementById('alert-period-label');
+  if (el) el.textContent = p.length === 1 ? (ALERT_PERIOD_LABELS[p[0]] || p[0]) : p.length + '周期';
+}
+function renderAlertPeriodDropdown() {
+  const dd = document.getElementById('alert-period-dropdown');
+  if (!dd) return;
+  const cur = getAlertPeriods();
+  const isMulti = cur.length > 1;
+  const periods = ['15','30','60','120','daily','weekly'];
+  dd.innerHTML = '';
+
+  // 单选行
+  periods.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'alert-period-item' + (!isMulti && cur[0] === p ? ' active' : '');
+    d.innerHTML = `<span>${ALERT_PERIOD_LABELS[p]}</span><span style="color:var(--muted);font-size:10px">${ALERT_PERIOD_DURATIONS[p]}分弹窗</span>`;
+    d.addEventListener('click', e => { e.stopPropagation(); setAlertPeriods([p]); dd.classList.remove('open'); });
+    dd.appendChild(d);
+  });
+
+  // 分隔线
+  const sep = document.createElement('div');
+  sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0';
+  dd.appendChild(sep);
+
+  // 自定义多选
+  const multiD = document.createElement('div');
+  multiD.className = 'alert-period-item' + (isMulti ? ' active' : '');
+  multiD.innerHTML = isMulti
+    ? `<span>多选：${cur.map(p => ALERT_PERIOD_LABELS[p]).join('+')} ✓</span>`
+    : `<span>自定义多选…</span>`;
+  multiD.addEventListener('click', e => { e.stopPropagation(); _toggleMultiMode(); });
+  dd.appendChild(multiD);
+
+  // 多选 checkbox 列表
+  if (isMulti) {
+    const checkWrap = document.createElement('div');
+    checkWrap.style.cssText = 'padding:4px 10px 6px';
+    periods.forEach(p => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer;font-size:12px;color:var(--text)';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = cur.includes(p); cb.style.accentColor = '#58a6ff';
+      cb.addEventListener('change', e => {
+        e.stopPropagation();
+        let newP = getAlertPeriods().filter(x => x !== p);
+        if (cb.checked) newP.push(p);
+        if (newP.length === 0) newP = ['30'];
+        setAlertPeriods(newP);
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(ALERT_PERIOD_LABELS[p]));
+      checkWrap.appendChild(label);
+    });
+    dd.appendChild(checkWrap);
+  }
+}
+function _toggleMultiMode() {
+  const cur = getAlertPeriods();
+  setAlertPeriods(cur.length === 1 ? [cur[0], cur[0] === '30' ? 'daily' : '30'] : ['30']);
+}
+
+// ── 弹窗时效 ──────────────────────────────────────────
+
+function getPopupDurationForPeriod(period) {
+  const manual = localStorage.getItem('popup_duration');
+  if (manual && manual !== 'auto') {
+    return manual === 'never' ? null : parseInt(manual) * 60000;
+  }
+  const base = (ALERT_PERIOD_DURATIONS[period] || 15) * 60000;
   const h = new Date().getHours();
   return (h >= 21 || h < 6) ? Math.max(base, 30 * 60000) : base;
+}
+
+function getPopupDuration() {
+  return getPopupDurationForPeriod('30');
+}
+function getEffectiveDuration() {
+  return getPopupDurationForPeriod(currentPeriod);
 }
 function fmtRemain(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -1240,48 +1567,49 @@ function updateSoundTimer() {
   }
 }
 
-function showSignalToast(data, sigType) {
+function showSignalToast(data, sigType, period) {
+  period = period || '30';
+  const periodLabel = ALERT_PERIOD_LABELS[period] || period;
   const sym    = data.symbol;
   const isLong = sigType === '做多';
   const meta   = data.meta || {};
   const dt     = meta.datetime || '';
   const expKey = `${sym}|${dt.slice(0, 16)}`;
 
-  if (_activePopups[sym]) return;  // 该品种弹窗已在显示
+  if (_activePopups[sym]) return;
   if (Object.keys(_activePopups).length >= 3) {
-    _unreadSignals.push({ data, sigType });
+    _unreadSignals.push({ data, sigType, period });
     updateBell();
     return;
   }
 
   _symbolStatus[sym] = isLong ? 'long' : 'short';
-  const duration  = getEffectiveDuration();
+  const duration  = getPopupDurationForPeriod(period);
   const startTime = Date.now();
-  const durLabel  = duration ? `${Math.round(duration / 60000)}分钟` : '∞';
 
   const el = document.createElement('div');
   el.className = `signal-alert ${isLong ? 'long' : 'short'}`;
   el.dataset.symbol = sym;
   el.innerHTML =
-    `<div class="signal-alert-icon">${isLong ? '▲' : '▼'}</div>` +
-    `<div class="signal-alert-type" style="color:${isLong ? 'var(--bull)' : 'var(--bear)'}">` +
-      `${isLong ? '做  多  信  号' : '做  空  信  号'}` +
-    `</div>` +
-    `<div class="signal-alert-info">` +
-      `${data.name || sym}<br>` +
-      `${dt.slice(11, 19)}&nbsp;&nbsp;收盘 ${meta.close?.toFixed(0) ?? '--'}<br>` +
-      `<span class="sig-remain">剩余时效：${duration ? fmtRemain(duration) : '∞'} ⏱</span>` +
-    `</div>` +
-    `<div class="signal-alert-actions">` +
-      `<button class="signal-alert-goto">立即查看K线</button>` +
-      `<button class="signal-alert-close">知道了</button>` +
-    `</div>` +
-    `<div class="signal-progress"><div class="signal-progress-bar"></div></div>`;
+    `<div class="signal-alert-inner">` +
+      `<div class="signal-alert-icon">${isLong ? '▲' : '▼'}</div>` +
+      `<div class="signal-alert-type" style="color:${isLong ? 'var(--bull)' : 'var(--bear)'}">` +
+        `${isLong ? '做  多  信  号' : '做  空  信  号'}` +
+      `</div>` +
+      `<div class="signal-alert-info">` +
+        `${data.name || sym}&nbsp;<span class="period-tag">${periodLabel}K线信号</span><br>` +
+        `${dt.slice(11, 19)}&nbsp;&nbsp;收盘 ${meta.close?.toFixed(0) ?? '--'}<br>` +
+        `<span class="sig-remain">剩余时效：${duration ? fmtRemain(duration) : '∞'} ⏱</span>` +
+      `</div>` +
+      `<div class="signal-alert-actions">` +
+        `<button class="signal-alert-goto">立即查看K线</button>` +
+        `<button class="signal-alert-close">知道了</button>` +
+      `</div>` +
+      `<div class="signal-progress"><div class="signal-progress-bar"></div></div>` +
+    `</div>`;
 
   const progressBar = el.querySelector('.signal-progress-bar');
   const remainEl    = el.querySelector('.sig-remain');
-
-  // 必须先定义 state，闭包里要引用
   const state = { el, ticker: null, autoClose: null };
 
   function closeAlert(expired) {
@@ -1289,30 +1617,22 @@ function showSignalToast(data, sigType) {
     if (state.ticker)    clearInterval(state.ticker);
     if (state.autoClose) clearTimeout(state.autoClose);
     delete _activePopups[sym];
-    if (expired) {
-      _symbolStatus[sym] = 'expired';
-      _expiredKeys.add(expKey);
-    } else {
-      _symbolStatus[sym] = null;
-    }
+    if (expired) { _symbolStatus[sym] = 'expired'; _expiredKeys.add(expKey); }
+    else         { _symbolStatus[sym] = null; }
     updateSoundTimer();
     renderWatchlist();
-    // 从未读队列补一个
     if (_unreadSignals.length && Object.keys(_activePopups).length < 3) {
-      const next = _unreadSignals.shift();
-      updateBell();
-      showSignalToast(next.data, next.sigType);
+      const next = _unreadSignals.shift(); updateBell();
+      if (next.resonancePeriods) showResonanceToast(next.data, next.resonancePeriods, next.sigType);
+      else showSignalToast(next.data, next.sigType, next.period);
     }
+    if (expired) { _unreadSignals.push({ data, sigType, period }); updateBell(); }
   }
 
   el.querySelector('.signal-alert-close').addEventListener('click', () => closeAlert(false));
   el.querySelector('.signal-alert-goto').addEventListener('click', () => {
-    currentSymbol = sym;
-    currentSymbolName = data.name || sym;
-    viewInitialized = false;
-    renderWatchlist();
-    loadData();
-    closeAlert(false);
+    currentSymbol = sym; currentSymbolName = data.name || sym;
+    viewInitialized = false; renderWatchlist(); loadData(); closeAlert(false);
   });
 
   document.getElementById('popup-stack').appendChild(el);
@@ -1332,6 +1652,111 @@ function showSignalToast(data, sigType) {
   renderWatchlist();
 }
 
+// ── 多周期共振弹窗 ────────────────────────────────────
+
+function playResonanceSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const beep = (t, freq, dur) => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.5, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t); osc.stop(t + dur);
+    };
+    const t = ctx.currentTime;
+    beep(t, 880, 0.12); beep(t+0.15, 1100, 0.12); beep(t+0.30, 1320, 0.12);
+    beep(t+0.50, 880, 0.12); beep(t+0.65, 1100, 0.12); beep(t+0.80, 1320, 0.25);
+  } catch(e) {}
+}
+
+function showResonanceToast(data, periods, sigType) {
+  const sym    = data.symbol;
+  const isLong = sigType === '做多';
+  const meta   = data.meta || {};
+  const dt     = meta.datetime || '';
+  const expKey = `${sym}|${dt.slice(0, 16)}`;
+  const periodStr = periods.map(p => ALERT_PERIOD_LABELS[p] || p).join('+');
+  const maxMin  = Math.max(...periods.map(p => ALERT_PERIOD_DURATIONS[p] || 15));
+  const duration = maxMin * 60000;
+  const startTime = Date.now();
+
+  if (_activePopups[sym]) return;
+  if (Object.keys(_activePopups).length >= 3) {
+    _unreadSignals.push({ data, sigType, period: 'resonance', resonancePeriods: periods });
+    updateBell(); return;
+  }
+
+  _symbolStatus[sym] = isLong ? 'long' : 'short';
+  const accentColor = isLong ? '#FF6600' : '#00FFAA';
+
+  const el = document.createElement('div');
+  el.className = `signal-alert resonance ${isLong ? 'long' : 'short'}`;
+  el.dataset.symbol = sym;
+  el.style.maxWidth = '540px';
+  el.innerHTML =
+    `<div class="signal-alert-inner">` +
+      `<div class="signal-alert-icon">⚡⚡</div>` +
+      `<div class="signal-alert-type" style="color:${accentColor};font-size:20px;letter-spacing:2px;">` +
+        `多周期共振${isLong ? '做多' : '做空'}信号！` +
+      `</div>` +
+      `<div class="signal-alert-info" style="text-align:left;padding:0 8px;">` +
+        `品种：${data.name || sym}<br>` +
+        `当前价：${meta.close?.toFixed(0) ?? '--'}<br>` +
+        `触发周期：<span style="color:${accentColor};font-weight:700;">${periodStr}</span><br>` +
+        `信号：${isLong ? '黄点破浪' : '绿点空仓'}（多周期确认）<br>` +
+        `时间：${dt.slice(11, 19)}<br>` +
+        `<span class="sig-remain">剩余：${fmtRemain(duration)} ⏱</span>` +
+      `</div>` +
+      `<div class="signal-progress" style="margin-top:10px;"><div class="signal-progress-bar" style="background:${accentColor}"></div></div>` +
+      `<div class="signal-alert-actions" style="margin-top:10px;">` +
+        `<button class="signal-alert-goto">立即查看</button>` +
+        `<button class="signal-alert-close" style="background:${accentColor};color:#000">知道了</button>` +
+      `</div>` +
+    `</div>`;
+
+  const progressBar = el.querySelector('.signal-progress-bar');
+  const remainEl    = el.querySelector('.sig-remain');
+  const state = { el, ticker: null, autoClose: null };
+
+  function closeAlert(expired) {
+    el.remove();
+    if (state.ticker)    clearInterval(state.ticker);
+    if (state.autoClose) clearTimeout(state.autoClose);
+    delete _activePopups[sym];
+    if (expired) { _symbolStatus[sym] = 'expired'; _expiredKeys.add(expKey); }
+    else         { _symbolStatus[sym] = null; }
+    updateSoundTimer(); renderWatchlist();
+    if (_unreadSignals.length && Object.keys(_activePopups).length < 3) {
+      const next = _unreadSignals.shift(); updateBell();
+      if (next.resonancePeriods) showResonanceToast(next.data, next.resonancePeriods, next.sigType);
+      else showSignalToast(next.data, next.sigType, next.period);
+    }
+    if (expired) { _unreadSignals.push({ data, sigType, period: 'resonance', resonancePeriods: periods }); updateBell(); }
+  }
+
+  el.querySelector('.signal-alert-close').addEventListener('click', () => closeAlert(false));
+  el.querySelector('.signal-alert-goto').addEventListener('click', () => {
+    currentSymbol = sym; currentSymbolName = data.name || sym;
+    viewInitialized = false; renderWatchlist(); loadData(); closeAlert(false);
+  });
+
+  document.getElementById('popup-stack').appendChild(el);
+  _activePopups[sym] = state;
+
+  state.ticker = setInterval(() => {
+    const rem = duration - (Date.now() - startTime);
+    if (rem <= 0) { closeAlert(true); return; }
+    progressBar.style.width = (rem / duration * 100) + '%';
+    remainEl.textContent = `剩余：${fmtRemain(rem)} ⏱`;
+  }, 1000);
+  state.autoClose = setTimeout(() => closeAlert(true), duration);
+
+  playResonanceSound();
+  updateSoundTimer(); renderWatchlist();
+}
+
 // ── 桌面通知 ─────────────────────────────────────────
 
 function initNotifications() {
@@ -1341,34 +1766,44 @@ function initNotifications() {
   }
 }
 
-function checkAndNotify(data) {
+function checkAndNotify(data, period) {
+  period = period || data.period || '30';
+  const alertPeriods = getAlertPeriods();
+  // 只在已配置的触发周期上弹窗
+  if (!alertPeriods.includes(period)) return;
+
   const sig  = data.signals || {};
   const meta = data.meta    || {};
   const sym  = data.symbol;
   const time = meta.datetime || '';
+  const notifyKey = `${sym}|${period}`;
 
-  if (!_watchlistNotified[sym]) _watchlistNotified[sym] = {};
-  const prev = _watchlistNotified[sym];
+  if (!_watchlistNotified[notifyKey]) _watchlistNotified[notifyKey] = {};
+  const prev = _watchlistNotified[notifyKey];
 
   if (sig['做多'] && !(prev.type === '做多' && prev.time === time)) {
     prev.type = '做多'; prev.time = time;
-    showSignalToast(data, '做多');
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(`▲ 做多信号 — ${data.name}`, {
-        body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-        tag:  `${sym}-long`,
-      });
+    if (!_silentInit) {
+      showSignalToast(data, '做多', period);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(`▲ 做多信号 — ${data.name} [${ALERT_PERIOD_LABELS[period]||period}]`, {
+          body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+          tag:  `${sym}-long-${period}`,
+        });
+      }
     }
   }
 
   if (sig['做空'] && !(prev.type === '做空' && prev.time === time)) {
     prev.type = '做空'; prev.time = time;
-    showSignalToast(data, '做空');
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(`▼ 做空信号 — ${data.name}`, {
-        body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-        tag:  `${sym}-short`,
-      });
+    if (!_silentInit) {
+      showSignalToast(data, '做空', period);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(`▼ 做空信号 — ${data.name} [${ALERT_PERIOD_LABELS[period]||period}]`, {
+          body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+          tag:  `${sym}-short-${period}`,
+        });
+      }
     }
   }
 }
@@ -1378,6 +1813,25 @@ setInterval(() => {
   loadData('update');
   scanAllWatchlist();
 }, 60000);
+
+// 趋势面板：每5分钟刷新一次（首次在 loadData 后触发）
+setInterval(updateTrendPanel, 5 * 60000);
+
+// 后端信号队列：每3秒轮询（只取本次会话连接后产生的信号，防重复推送）
+function _consumePending() {
+  fetch(`/api/signals/pending?since=${encodeURIComponent(_sessionStart)}`).then(r => r.json()).then(items => {
+    items.forEach(item => {
+      const fakeData = {
+        symbol: item.symbol, name: item.name, period: item.period,
+        signals: { '做多': item.sigType==='做多', '做空': item.sigType==='做空',
+                   '破浪_黄点': item.sigType==='做多', '空仓_绿点': item.sigType==='做空' },
+        meta: { datetime: item.time, close: item.price },
+      };
+      showSignalToast(fakeData, item.sigType, item.period);
+    });
+  }).catch(()=>{});
+}
+setInterval(_consumePending, 3000);
 
 // ── 导入公式模态框 ────────────────────────────────────
 const modalEl  = document.getElementById('modal-import');
@@ -1392,7 +1846,7 @@ function closeImportModal() {
   fiError.style.display = 'none';
 }
 
-document.getElementById('btn-import').addEventListener('click', openImportModal);
+document.getElementById('btn-import')?.addEventListener('click', openImportModal);
 document.getElementById('modal-close').addEventListener('click', closeImportModal);
 document.getElementById('fi-cancel').addEventListener('click', closeImportModal);
 modalEl.addEventListener('click', e => { if (e.target === modalEl) closeImportModal(); });
@@ -1484,15 +1938,37 @@ document.addEventListener('click', e => {
     document.getElementById('unread-panel').style.display = 'none';
 });
 
-// ── 弹窗时效设置 ───────────────────────────────────────
-const _durSel = document.getElementById('popup-duration-sel');
-_durSel.value = localStorage.getItem('popup_duration') || '15';
-_durSel.addEventListener('change', () => localStorage.setItem('popup_duration', _durSel.value));
+// ── 弹窗时效：后台自动按周期处理，无需 UI ──────────────
+if (!localStorage.getItem('popup_duration')) localStorage.setItem('popup_duration', 'auto');
+
+// ── 弹窗周期下拉 ───────────────────────────────────────
+const _apBtn = document.getElementById('btn-alert-period');
+const _apDd  = document.getElementById('alert-period-dropdown');
+_apBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  _apDd.classList.toggle('open');
+  if (_apDd.classList.contains('open')) renderAlertPeriodDropdown();
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.alert-period-wrap')) _apDd.classList.remove('open');
+});
+
+// ── 趋势刷新按钮 ───────────────────────────────────────
+document.getElementById('trend-refresh-btn').addEventListener('click', updateTrendPanel);
 
 // ── 启动 ─────────────────────────────────────────────
 initCharts();
 initRightAnchorZoom();
 initNotifications();
+updateAlertPeriodLabel();
+renderAlertPeriodDropdown();
+// 同步设置面板触发周期显示
+(function() {
+  const td = document.getElementById('trigger-period-display');
+  if (!td) return;
+  const p = getAlertPeriods();
+  td.textContent = (p.length === 1 ? (ALERT_PERIOD_LABELS[p[0]] || p[0]) : p.length + '周期') + ' ▶';
+})();
 
 // 加载已保存的副图插件（排除内置的 bsd_wang/main_signal）
 const BUILTIN_IDS = new Set(['bsd_wang', 'main_signal']);
@@ -1502,6 +1978,8 @@ fetch('/api/indicators').then(r => r.json()).then(metas => {
 }).catch(() => {});
 
 loadData();
+// 首次加载趋势面板（稍延迟，等主数据先渲染完）
+setTimeout(updateTrendPanel, 2000);
 </script>
 </body>
 </html>
