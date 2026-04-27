@@ -1,7 +1,7 @@
 """
 期货交易看板 — Flask API 服务（多品种支持）
 """
-import sys, os, math, time as _time
+import sys, os, math, time as _time, sqlite3 as _sqlite3, threading as _threading
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, jsonify, send_from_directory, request
@@ -26,6 +26,169 @@ SYMBOLS = {
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# ── 信号数据库（去重 + 跨重启持久化） ────────────────────────────
+DB_PATH = os.path.join(CACHE_DIR, "signals.db")
+
+def _init_db():
+    conn = _sqlite3.connect(DB_PATH)
+    conn.execute('''CREATE TABLE IF NOT EXISTS signals (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol      TEXT    NOT NULL,
+        signal_type TEXT    NOT NULL,
+        candle_time TEXT    NOT NULL,
+        created_at  TEXT    NOT NULL,
+        UNIQUE(symbol, signal_type, candle_time)
+    )''')
+    conn.commit()
+    conn.close()
+
+def _is_new_signal(symbol, signal_type, candle_time):
+    """三字段联合去重：新信号写入DB返回True，重复返回False。"""
+    try:
+        conn = _sqlite3.connect(DB_PATH)
+        cur  = conn.execute(
+            'INSERT OR IGNORE INTO signals (symbol,signal_type,candle_time,created_at) VALUES (?,?,?,?)',
+            (symbol, signal_type, candle_time, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        )
+        conn.commit()
+        is_new = cur.rowcount > 0
+        conn.close()
+        return is_new
+    except Exception as e:
+        print(f"[db] {e}")
+        return True  # fail open
+
+# ── 后台扫描器 ────────────────────────────────────────────────────
+_active_period      = '30'
+_active_period_lock = _threading.Lock()
+
+_PERIOD_LABEL = {
+    '1':'1分','5':'5分','15':'15分','30':'30分',
+    '60':'60分','120':'120分','daily':'日线','weekly':'周线',
+}
+
+# ── 品种交易时段（夜盘结束时间，单位：分钟；night_next=True 表示跨越次日凌晨）────
+_SYMBOL_NIGHT_END = {
+    'P0':  (23 * 60,        False),  # 大商所棕榈油      23:00
+    'AG0': ( 2 * 60 + 30,  True),   # 上期所白银        次日 02:30
+    'BC0': ( 1 * 60,        True),   # 上期能源国际铜    次日 01:00
+    'CU0': ( 1 * 60,        True),   # 上期所铜          次日 01:00
+    'SA0': (23 * 60,        False),  # 郑商所纯碱        23:00
+    'SC0': ( 2 * 60 + 30,  True),   # 上期能源原油      次日 02:30
+    'SN0': ( 1 * 60,        True),   # 上期所锡          次日 01:00
+}
+
+def get_market_status(symbol, now=None):
+    """返回品种当前交易状态。
+    status: 'trading' | 'lunch' | 'closed'
+    next_open: 下次开市时间字符串（交易中时为 None）
+    """
+    if now is None:
+        now = datetime.now()
+    wd = now.weekday()              # 0=周一 … 5=周六 6=周日
+    t  = now.hour * 60 + now.minute # 当前时间（分钟）
+
+    night_end, night_next = _SYMBOL_NIGHT_END.get(symbol, (15 * 60, False))
+
+    # 周六：仅跨午夜品种的夜盘尾段（周五夜盘延续）
+    if wd == 5:
+        if night_next and t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '周一 09:00'}
+
+    # 周日：全天闭市
+    if wd == 6:
+        return {'status': 'closed', 'next_open': '周一 09:00'}
+
+    # 午休 11:30–13:00
+    if 11 * 60 + 30 <= t < 13 * 60:
+        return {'status': 'lunch', 'next_open': '13:00'}
+
+    # 日盘 09:00–11:30、13:00–15:00
+    if (9 * 60 <= t < 11 * 60 + 30) or (13 * 60 <= t < 15 * 60):
+        return {'status': 'trading', 'next_open': None}
+
+    # 日盘后至夜盘前 15:00–21:00
+    if 15 * 60 <= t < 21 * 60:
+        return {'status': 'closed', 'next_open': '21:00'}
+
+    # 夜盘 21:00 以后（或凌晨跨午夜段）
+    if night_next:
+        if t >= 21 * 60 or t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '09:00'}
+    else:
+        if 21 * 60 <= t < night_end:
+            return {'status': 'trading', 'next_open': None}
+        return {'status': 'closed', 'next_open': '09:00'}
+
+def _is_kline_close(period):
+    """判断当前时刻是否恰好是该周期K线的收盘时刻。"""
+    now = datetime.now()
+    m, h, wd = now.minute, now.hour, now.weekday()
+    return {
+        '1':      True,
+        '5':      m % 5  == 0,
+        '15':     m % 15 == 0,
+        '30':     m % 30 == 0,
+        '60':     m == 0,
+        '120':    m == 0 and h % 2 == 0,
+        'daily':  h == 15 and m == 1,
+        'weekly': wd == 4 and h == 15 and m == 1,
+    }.get(period, False)
+
+# 各周期对应的分钟数（用于判断是否属于分钟线周期）
+_PERIOD_MINUTES = {
+    '1': 1, '5': 5, '15': 15, '30': 30, '60': 60, '120': 120,
+}
+
+def _do_scan(period):
+    now = datetime.now()
+    for sym_code, sym_cfg in SYMBOLS.items():
+        try:
+            data = get_data(symbol=sym_code, period=period, name=sym_cfg['name'])
+            if not data or data.get('error'):
+                continue
+            sig         = data.get('signals', {})
+            meta        = data.get('meta', {})
+            candle_time = meta.get('datetime', '')
+            if not candle_time:
+                continue
+
+            # 交易时段检查：非交易时段不推信号
+            if period in _PERIOD_MINUTES:
+                ms = get_market_status(sym_code, now)
+                if ms['status'] != 'trading':
+                    print(f"[scanner] {sym_code} {ms['status']}，跳过")
+                    continue
+
+            for sig_type in ('做多', '做空'):
+                if sig.get(sig_type) and _is_new_signal(sym_code, sig_type, candle_time):
+                    push_pending_signal({
+                        'symbol': sym_code, 'name': sym_cfg['name'],
+                        'period': period,   'sigType': sig_type,
+                        'price':  meta.get('close'), 'time': candle_time,
+                    })
+                    print(f"[scanner] ✦ {sym_code} {_PERIOD_LABEL.get(period,period)} {sig_type} @ {candle_time}")
+        except Exception as e:
+            print(f"[scanner] {sym_code} 错误: {e}")
+
+def _scanner_loop():
+    _time.sleep(15)   # 等 Flask 完成启动
+    while True:
+        try:
+            with _active_period_lock:
+                period = _active_period
+            ts = datetime.now().strftime('%H:%M:%S')
+            if _is_kline_close(period):
+                print(f"[{ts}] 扫描中... {_PERIOD_LABEL.get(period,period)}K线收盘✅ 检测信号")
+                _do_scan(period)
+            else:
+                print(f"[{ts}] 扫描中... 未到收盘时刻 跳过")
+        except Exception as e:
+            print(f"[scanner] 主循环错误: {e}")
+        _time.sleep(60)
 
 def _save_cache(name, df):
     df.to_csv(os.path.join(CACHE_DIR, f"{name}.csv"), index=False)
@@ -60,6 +223,10 @@ def clean(obj):
 # 分钟线内存缓存：按周期设定 TTL（秒），避免频繁重拉
 _minute_cache = {}
 _MINUTE_TTL = {'1': 20, '5': 60, '15': 180, '30': 300, '60': 600, '120': 1200}
+
+# 日线内存缓存：TTL 300秒（每次请求均需日线用于支撑压力位计算）
+_daily_cache = {}
+_DAILY_TTL   = 300
 
 def get_minute_data(sina_code, period='15'):
     import akshare as ak
@@ -119,6 +286,12 @@ def get_daily_data(symbol_cfg):
     import akshare as ak
     code = symbol_cfg['daily_code']
     cache_key = f"daily_{code}"
+    now = _time.time()
+
+    if cache_key in _daily_cache:
+        ts, df = _daily_cache[cache_key]
+        if now - ts < _DAILY_TTL:
+            return df
 
     for attempt in range(3):
         try:
@@ -127,6 +300,7 @@ def get_daily_data(symbol_cfg):
             df.columns = [c.lower() for c in df.columns]
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date").reset_index(drop=True)
+            _daily_cache[cache_key] = (now, df)
             _save_cache(cache_key, df)
             print(f"{code}: {len(df)} 条，收={df['close'].iloc[-1]:.0f}")
             return df
@@ -135,7 +309,9 @@ def get_daily_data(symbol_cfg):
             if attempt < 2:
                 _time.sleep(1)
 
-    print(f"{code} 日线全部失败，用CSV缓存")
+    print(f"{code} 日线全部失败，用过期缓存或CSV")
+    if cache_key in _daily_cache:
+        return _daily_cache[cache_key][1]
     return _load_cache(cache_key)
 
 
@@ -412,23 +588,63 @@ def api_trend():
     return jsonify(result)
 
 
-# ── 后端信号队列（供 scheduler.py 写入，前端轮询） ────────────────
-import threading as _threading
+# ── 后端信号队列（供扫描器写入，前端轮询） ────────────────────────
 _pending_signals = []
 _pending_lock    = _threading.Lock()
 
-@app.route("/api/signals/pending")
-def api_signals_pending():
-    """返回并清空待通知信号列表（供 scheduler.py + 前端消费）"""
-    with _pending_lock:
-        out = list(_pending_signals)
-        _pending_signals.clear()
-    return jsonify(out)
-
 def push_pending_signal(signal_dict):
-    """scheduler.py 调用此函数写入信号"""
+    """写入待通知信号（自动补 created_at）"""
+    signal_dict.setdefault('created_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     with _pending_lock:
         _pending_signals.append(signal_dict)
+
+@app.route("/api/signals/pending")
+def api_signals_pending():
+    """返回并清空待通知信号。
+    ?since=YYYY-MM-DD HH:MM:SS  只返回 created_at >= since 的信号（用于页面重连过滤）
+    """
+    since = request.args.get('since', None)
+    with _pending_lock:
+        if since:
+            out = [s for s in _pending_signals if s.get('created_at', '') >= since]
+            for s in out:
+                try: _pending_signals.remove(s)
+                except ValueError: pass
+        else:
+            out = list(_pending_signals)
+            _pending_signals.clear()
+    return jsonify(out)
+
+@app.route("/api/signals/push", methods=["POST"])
+def api_push_signal():
+    """外部 scheduler.py 可通过此接口推送信号"""
+    body = request.get_json(force=True)
+    push_pending_signal(body)
+    return jsonify({"ok": True})
+
+@app.route("/api/settings/period", methods=["GET", "POST"])
+def api_period_settings():
+    """GET: 查询当前扫描周期。POST body {period}: 切换扫描周期。"""
+    global _active_period
+    if request.method == 'POST':
+        body   = request.get_json(force=True)
+        period = str(body.get('period', '30'))
+        if period not in _PERIOD_LABEL:
+            return jsonify({"error": "无效周期"}), 400
+        with _active_period_lock:
+            _active_period = period
+        print(f"[settings] 扫描周期切换 → {_PERIOD_LABEL.get(period, period)}")
+        return jsonify({"ok": True, "period": period})
+    else:
+        with _active_period_lock:
+            return jsonify({"period": _active_period})
+
+
+@app.route("/api/market_status")
+def api_market_status():
+    """返回品种当前交易状态（trading/lunch/closed）及下次开市时间。"""
+    symbol = request.args.get('symbol', 'P0')
+    return jsonify(get_market_status(symbol))
 
 
 @app.route("/api/indicators")
@@ -483,31 +699,13 @@ def api_import_formula():
                     "outputs": parser.build_meta_outputs()})
 
 
-@app.route("/api/test/signal", methods=["POST"])
-def api_test_signal():
-    """测试用：直接注入一条信号到队列，前端立即消费。
-    sigType 支持 'long'/'做多' 和 'short'/'做空'，避免编码问题。
-    """
-    body = request.get_json(force=True)
-    # 归一化 sigType：接受英文/中文两种写法
-    raw = body.get('sigType', 'short')
-    if raw in ('long', 'buy', '做多', 'LONG'):
-        body['sigType'] = '做多'
-    else:
-        body['sigType'] = '做空'
-    body.setdefault('symbol', 'P0')
-    body.setdefault('name',   '棕榈油主力')
-    body.setdefault('period', '30')
-    body.setdefault('price',  9781)
-    body.setdefault('time',   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    push_pending_signal(body)
-    return jsonify({"ok": True, "sigType": body['sigType'], "period": body['period']})
-
 
 @app.route("/")
 def index():
     return send_from_directory("dashboard", "index.html")
 
 if __name__ == "__main__":
+    _init_db()
+    _threading.Thread(target=_scanner_loop, daemon=True).start()
     print("启动看板服务: http://localhost:8877")
-    app.run(host="0.0.0.0", port=8877, debug=False)
+    app.run(host="0.0.0.0", port=8877, debug=False, threaded=True)

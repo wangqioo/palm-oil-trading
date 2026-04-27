@@ -159,6 +159,14 @@ body.fullscreen #sidebar { display: none; }
   60%       { transform: translateX(-10px); }
   80%       { transform: translateX(10px); }
 }
+@keyframes sig-shake-counter {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(14px); }
+  40%       { transform: translateX(-14px); }
+  60%       { transform: translateX(10px); }
+  80%       { transform: translateX(-10px); }
+}
+.signal-alert-inner { animation: sig-shake-counter 0.25s linear infinite; }
 /* 多周期趋势面板 */
 .trend-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 12px; border-bottom: 1px solid rgba(48,54,61,.4); }
 .trend-row:last-child { border: none; }
@@ -187,6 +195,16 @@ body.fullscreen #sidebar { display: none; }
 .signal-alert.resonance.short { border-color: #00FFAA; box-shadow: 0 0 80px rgba(0,255,170,.7), 0 0 150px rgba(0,255,170,.3), 0 8px 40px rgba(0,0,0,.9); }
 /* 周期标签 */
 .period-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; background: rgba(88,166,255,.18); color: var(--accent); margin-left: 4px; vertical-align: middle; }
+/* 实时时钟 */
+#hdr-clock { color: #888888; font-size: 12px; flex-shrink: 0; font-family: monospace; }
+/* 交易状态灯 */
+#market-status { display: flex; align-items: center; gap: 4px; font-size: 12px; flex-shrink: 0; }
+#ms-emoji { font-size: 11px; line-height: 1; }
+/* 侧边栏滚动条 — 贴近面板色调，与右边缘对齐 */
+#sidebar ::-webkit-scrollbar { width: 4px; }
+#sidebar ::-webkit-scrollbar-track { background: transparent; }
+#sidebar ::-webkit-scrollbar-thumb { background: rgba(125,133,144,.25); border-radius: 2px; }
+#sidebar ::-webkit-scrollbar-thumb:hover { background: rgba(125,133,144,.5); }
 </style>
 </head>
 <body>
@@ -194,11 +212,10 @@ body.fullscreen #sidebar { display: none; }
 <div id="header">
   <span id="hdr-name" class="contract">期货看板</span>
   <span id="hdr-contract" style="color:var(--muted);font-size:12px">P2609</span>
+  <div id="market-status"><span id="ms-emoji">⚫</span><span id="ms-text" style="color:var(--muted)">--</span></div>
   <div class="sep"></div>
   <span id="hdr-price" class="price" style="color:var(--bull)">--</span>
   <span id="hdr-chg" class="chg up">--</span>
-  <div class="sep"></div>
-  <span id="hdr-ts" class="ts">--</span>
   <div class="spacer"></div>
   <div class="period-btns">
     <button class="period-btn" data-p="1">1分</button>
@@ -213,6 +230,8 @@ body.fullscreen #sidebar { display: none; }
   <button class="icon-btn" id="btn-bell" title="未读信号" style="position:relative">🔔<span id="bell-badge"></span></button>
   <button class="icon-btn" id="btn-refresh" title="刷新">⟳</button>
   <button class="icon-btn" id="btn-fs" title="全屏/还原">⛶</button>
+  <div class="sep"></div>
+  <span id="hdr-clock"></span>
 </div>
 
 <!-- 导入公式模态框 -->
@@ -263,7 +282,7 @@ body.fullscreen #sidebar { display: none; }
     </div>
 
     <!-- 自选列表 (flex:1，内部滚动) -->
-    <div style="flex:1; overflow-y:auto; padding:6px 10px; border-bottom:1px solid var(--border); min-height:0;">
+    <div style="flex:1; overflow-y:auto; padding:6px 0 6px 10px; border-bottom:1px solid var(--border); min-height:0;">
       <div id="watchlist"></div>
     </div>
 
@@ -277,7 +296,7 @@ body.fullscreen #sidebar { display: none; }
     </div>
 
     <!-- 历史信号 (固定120px) -->
-    <div style="flex-shrink:0; height:120px; overflow:hidden; padding:6px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column;">
+    <div style="flex-shrink:0; height:120px; overflow:hidden; padding:6px 0 6px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column;">
       <div class="s-title" style="margin-bottom:4px;">📋 历史信号</div>
       <div id="hist-list" style="flex:1; overflow-y:auto; min-height:0;"></div>
     </div>
@@ -359,6 +378,88 @@ let subCharts = [];
 let extremeLine10, extremeLine90;
 let activePriceLines = [];
 let viewInitialized = false;
+
+// 页面会话开始时间（ISO字符串），用于过滤本次连接之前产生的历史信号
+const _sessionStart = new Date().toLocaleString('sv').replace('T', ' ');
+
+// ── 实时时钟 ──────────────────────────────────────────
+(function startClock() {
+  function tick() {
+    const now = new Date();
+    const el = document.getElementById('hdr-clock');
+    if (el) el.textContent = now.toLocaleString('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ── 交易状态灯 ──────────────────────────────────────────
+function updateMarketStatus() {
+  fetch(`/api/market_status?symbol=${encodeURIComponent(currentSymbol)}`)
+    .then(r => r.json())
+    .then(s => {
+      const emoji = document.getElementById('ms-emoji');
+      const text  = document.getElementById('ms-text');
+      if (!emoji || !text) return;
+      if (s.status === 'trading') {
+        emoji.textContent = '🟢';
+        text.textContent  = '交易中';
+        text.style.color  = '#4caf50';
+      } else if (s.status === 'lunch') {
+        emoji.textContent = '🟡';
+        text.textContent  = `午休中 | ${s.next_open} 恢复`;
+        text.style.color  = '#FFD700';
+      } else {
+        emoji.textContent = '⚫';
+        text.textContent  = `已闭市 | ${s.next_open} 开市`;
+        text.style.color  = 'var(--muted)';
+      }
+    })
+    .catch(() => {});
+}
+updateMarketStatus();
+setInterval(updateMarketStatus, 60000);
+
+// 将 lightweight-charts Unix秒时间戳格式化为可读字符串
+function fmtBarTime(t) {
+  const d = new Date(t * 1000);
+  const y = d.getFullYear();
+  const M = String(d.getMonth() + 1).padStart(2, '0');
+  const D = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return (currentPeriod === 'daily' || currentPeriod === 'weekly')
+    ? `${y}-${M}-${D}`
+    : `${y}-${M}-${D} ${h}:${m}`;
+}
+
+// 更新 K线图内左上角 OHLC + 时间（不传 bar 时读末根 K 线）
+function updateKlineLegend(bar) {
+  const el = document.getElementById('legend-kline');
+  if (!el) return;
+  if (!bar && allData && allData.indicator_series?.length) {
+    bar = allData.indicator_series[allData.indicator_series.length - 1];
+  }
+  if (!bar) return;
+  const d = new Date(bar.time * 1000);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  const timeStr = (currentPeriod === 'daily' || currentPeriod === 'weekly')
+    ? `${y}-${mo}-${dy}` : `${y}-${mo}-${dy} ${h}:${mi}:${s}`;
+  el.innerHTML =
+    `<span style="color:#b0bec5">O <b>${bar.open?.toFixed(0)}</b></span>` +
+    `<span style="color:#ef5350">H <b>${bar.high?.toFixed(0)}</b></span>` +
+    `<span style="color:#26a69a">L <b>${bar.low?.toFixed(0)}</b></span>` +
+    `<span style="color:#e6edf3">C <b>${bar.close?.toFixed(0)}</b></span>` +
+    `<span style="color:#7d8590"> | ${timeStr}</span>`;
+}
 
 // ── 多周期配置 ────────────────────────────────────────
 const ALERT_PERIOD_DURATIONS = { '15':8, '30':15, '60':30, '120':60, 'daily':240, 'weekly':1440 }; // 分钟
@@ -657,15 +758,13 @@ function drawSubCanvas(entry, bars) {
 // ── Legend ───────────────────────────────────────────
 function setupLegends() {
   kChart.subscribeCrosshairMove(p => {
-    const el = document.getElementById('legend-kline');
-    if (!p.time) { el.innerHTML = ''; return; }
+    if (!p.time) {
+      updateKlineLegend();  // 恢复末根K线 OHLC + 时间
+      return;
+    }
     const d = p.seriesData.get(candleSeries);
     if (!d) return;
-    el.innerHTML =
-      `<span style="color:#b0bec5">O <b>${d.open?.toFixed(0)}</b></span>` +
-      `<span style="color:#ef5350">H <b>${d.high?.toFixed(0)}</b></span>` +
-      `<span style="color:#26a69a">L <b>${d.low?.toFixed(0)}</b></span>` +
-      `<span style="color:#e6edf3">C <b>${d.close?.toFixed(0)}</b></span>`;
+    updateKlineLegend({ open: d.open, high: d.high, low: d.low, close: d.close, time: p.time });
   });
 
   bsdChart.subscribeCrosshairMove(p => {
@@ -681,13 +780,18 @@ function setupLegends() {
 }
 
 // ── 数据加载 ─────────────────────────────────────────
+let _loadAbort = null;  // 取消上一次未完成的 full 请求
+
 async function loadData(mode = 'full') {
   const url = `${API}?period=${currentPeriod}&symbol=${currentSymbol}&name=${encodeURIComponent(currentSymbolName)}&mode=${mode}`;
   if (mode === 'full') {
+    if (_loadAbort) { _loadAbort.abort(); }
+    _loadAbort = new AbortController();
     document.getElementById('loading').classList.remove('hidden');
+    updateMarketStatus();
   }
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, mode === 'full' ? { signal: _loadAbort.signal } : {});
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     if (mode === 'update' && allData) {
@@ -708,6 +812,7 @@ async function loadData(mode = 'full') {
       renderAll(data);
     }
   } catch(e) {
+    if (e.name === 'AbortError') return;  // 被新请求取消，静默忽略
     if (mode === 'full') {
       document.getElementById('loading').innerHTML = `<span style="color:#ef5350">加载失败: ${e.message}</span>`;
       return;
@@ -737,6 +842,8 @@ function updateBars(bars) {
   });
   // canvas 重绘波段王（轻量）
   requestAnimationFrame(() => drawBsdCanvas(allData.indicator_series));
+  // 增量刷新后同步末根K线时间（若十字线不在激活状态）
+  updateKlineLegend();
 }
 
 function renderAll(data) {
@@ -834,6 +941,9 @@ function renderAll(data) {
 
   // 刷新所有动态副图
   subCharts.forEach(s => renderSubChart(s, bars));
+
+  // 初始化K线图内时间：显示末根K线开盘时间
+  updateKlineLegend();
 }
 
 // ── 波段王 canvas 色块柱（STICKLINE K/D 之间，红=多/绿=空）──
@@ -878,7 +988,6 @@ function updateHeader(data) {
   const meta = data.meta || {};
   document.getElementById('hdr-name').textContent = data.name || '期货看板';
   document.getElementById('hdr-contract').textContent = data.symbol || '';
-  document.getElementById('hdr-ts').textContent = data.updated || '';
   const price = meta.close;
   if (price) {
     document.getElementById('hdr-price').textContent = price.toFixed(0);
@@ -1225,7 +1334,11 @@ window.addEventListener('resize', () => {
 // ── 全自选扫描（多周期支持）────────────────────────────
 const _watchlistNotified = {};
 
+// 页面刚加载时设为 true：第一轮扫描只录状态，不弹窗；完成后自动关闭
+let _silentInit = true;
+
 async function scanAllWatchlist() {
+  const silent = _silentInit;   // 本轮是否静默（页面加载后第一次）
   const alertPeriods = getAlertPeriods();
   const list = loadWatchlist();
   const now = Date.now();
@@ -1254,13 +1367,15 @@ async function scanAllWatchlist() {
 
         if (sig['做多'] && !(prev.type === '做多' && prev.time === sigTime)) {
           prev.type = '做多'; prev.time = sigTime;
-          triggered[period] = { sigType: '做多', data: scanData };
+          if (!silent) triggered[period] = { sigType: '做多', data: scanData };
         } else if (sig['做空'] && !(prev.type === '做空' && prev.time === sigTime)) {
           prev.type = '做空'; prev.time = sigTime;
-          triggered[period] = { sigType: '做空', data: scanData };
+          if (!silent) triggered[period] = { sigType: '做空', data: scanData };
         }
       } catch(e) {}
     }
+
+    if (silent) continue;  // 静默模式：只录状态，不弹
 
     // 共振检测
     const entries = Object.entries(triggered);
@@ -1280,6 +1395,9 @@ async function scanAllWatchlist() {
       }
     }
   }
+
+  // 第一次扫描完成后解除静默，此后正常弹窗
+  if (silent) _silentInit = false;
 }
 
 // ── 多周期趋势面板 ────────────────────────────────────
@@ -1375,6 +1493,13 @@ function setAlertPeriods(periods) {
   // 同步更新设置面板显示
   const td = document.getElementById('trigger-period-display');
   if (td) td.textContent = (periods.length === 1 ? (ALERT_PERIOD_LABELS[periods[0]] || periods[0]) : periods.length + '周期') + ' ▶';
+  // 通知后端切换扫描周期（多选时取第一个周期）
+  const backendPeriod = periods[0] || '30';
+  fetch('/api/settings/period', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ period: backendPeriod }),
+  }).catch(() => {});
 }
 function updateAlertPeriodLabel() {
   const p = getAlertPeriods();
@@ -1503,20 +1628,22 @@ function showSignalToast(data, sigType, period) {
   el.className = `signal-alert ${isLong ? 'long' : 'short'}`;
   el.dataset.symbol = sym;
   el.innerHTML =
-    `<div class="signal-alert-icon">${isLong ? '▲' : '▼'}</div>` +
-    `<div class="signal-alert-type" style="color:${isLong ? 'var(--bull)' : 'var(--bear)'}">` +
-      `${isLong ? '做  多  信  号' : '做  空  信  号'}` +
-    `</div>` +
-    `<div class="signal-alert-info">` +
-      `${data.name || sym}&nbsp;<span class="period-tag">${periodLabel}K线信号</span><br>` +
-      `${dt.slice(11, 19)}&nbsp;&nbsp;收盘 ${meta.close?.toFixed(0) ?? '--'}<br>` +
-      `<span class="sig-remain">剩余时效：${duration ? fmtRemain(duration) : '∞'} ⏱</span>` +
-    `</div>` +
-    `<div class="signal-alert-actions">` +
-      `<button class="signal-alert-goto">立即查看K线</button>` +
-      `<button class="signal-alert-close">知道了</button>` +
-    `</div>` +
-    `<div class="signal-progress"><div class="signal-progress-bar"></div></div>`;
+    `<div class="signal-alert-inner">` +
+      `<div class="signal-alert-icon">${isLong ? '▲' : '▼'}</div>` +
+      `<div class="signal-alert-type" style="color:${isLong ? 'var(--bull)' : 'var(--bear)'}">` +
+        `${isLong ? '做  多  信  号' : '做  空  信  号'}` +
+      `</div>` +
+      `<div class="signal-alert-info">` +
+        `${data.name || sym}&nbsp;<span class="period-tag">${periodLabel}K线信号</span><br>` +
+        `${dt.slice(11, 19)}&nbsp;&nbsp;收盘 ${meta.close?.toFixed(0) ?? '--'}<br>` +
+        `<span class="sig-remain">剩余时效：${duration ? fmtRemain(duration) : '∞'} ⏱</span>` +
+      `</div>` +
+      `<div class="signal-alert-actions">` +
+        `<button class="signal-alert-goto">立即查看K线</button>` +
+        `<button class="signal-alert-close">知道了</button>` +
+      `</div>` +
+      `<div class="signal-progress"><div class="signal-progress-bar"></div></div>` +
+    `</div>`;
 
   const progressBar = el.querySelector('.signal-progress-bar');
   const remainEl    = el.querySelector('.sig-remain');
@@ -1536,6 +1663,7 @@ function showSignalToast(data, sigType, period) {
       if (next.resonancePeriods) showResonanceToast(next.data, next.resonancePeriods, next.sigType);
       else showSignalToast(next.data, next.sigType, next.period);
     }
+    if (expired) { _unreadSignals.push({ data, sigType, period }); updateBell(); }
   }
 
   el.querySelector('.signal-alert-close').addEventListener('click', () => closeAlert(false));
@@ -1605,22 +1733,24 @@ function showResonanceToast(data, periods, sigType) {
   el.dataset.symbol = sym;
   el.style.maxWidth = '540px';
   el.innerHTML =
-    `<div class="signal-alert-icon">⚡⚡</div>` +
-    `<div class="signal-alert-type" style="color:${accentColor};font-size:20px;letter-spacing:2px;">` +
-      `多周期共振${isLong ? '做多' : '做空'}信号！` +
-    `</div>` +
-    `<div class="signal-alert-info" style="text-align:left;padding:0 8px;">` +
-      `品种：${data.name || sym}<br>` +
-      `当前价：${meta.close?.toFixed(0) ?? '--'}<br>` +
-      `触发周期：<span style="color:${accentColor};font-weight:700;">${periodStr}</span><br>` +
-      `信号：${isLong ? '黄点破浪' : '绿点空仓'}（多周期确认）<br>` +
-      `时间：${dt.slice(11, 19)}<br>` +
-      `<span class="sig-remain">剩余：${fmtRemain(duration)} ⏱</span>` +
-    `</div>` +
-    `<div class="signal-progress" style="margin-top:10px;"><div class="signal-progress-bar" style="background:${accentColor}"></div></div>` +
-    `<div class="signal-alert-actions" style="margin-top:10px;">` +
-      `<button class="signal-alert-goto">立即查看</button>` +
-      `<button class="signal-alert-close" style="background:${accentColor};color:#000">知道了</button>` +
+    `<div class="signal-alert-inner">` +
+      `<div class="signal-alert-icon">⚡⚡</div>` +
+      `<div class="signal-alert-type" style="color:${accentColor};font-size:20px;letter-spacing:2px;">` +
+        `多周期共振${isLong ? '做多' : '做空'}信号！` +
+      `</div>` +
+      `<div class="signal-alert-info" style="text-align:left;padding:0 8px;">` +
+        `品种：${data.name || sym}<br>` +
+        `当前价：${meta.close?.toFixed(0) ?? '--'}<br>` +
+        `触发周期：<span style="color:${accentColor};font-weight:700;">${periodStr}</span><br>` +
+        `信号：${isLong ? '黄点破浪' : '绿点空仓'}（多周期确认）<br>` +
+        `时间：${dt.slice(11, 19)}<br>` +
+        `<span class="sig-remain">剩余：${fmtRemain(duration)} ⏱</span>` +
+      `</div>` +
+      `<div class="signal-progress" style="margin-top:10px;"><div class="signal-progress-bar" style="background:${accentColor}"></div></div>` +
+      `<div class="signal-alert-actions" style="margin-top:10px;">` +
+        `<button class="signal-alert-goto">立即查看</button>` +
+        `<button class="signal-alert-close" style="background:${accentColor};color:#000">知道了</button>` +
+      `</div>` +
     `</div>`;
 
   const progressBar = el.querySelector('.signal-progress-bar');
@@ -1640,6 +1770,7 @@ function showResonanceToast(data, periods, sigType) {
       if (next.resonancePeriods) showResonanceToast(next.data, next.resonancePeriods, next.sigType);
       else showSignalToast(next.data, next.sigType, next.period);
     }
+    if (expired) { _unreadSignals.push({ data, sigType, period: 'resonance', resonancePeriods: periods }); updateBell(); }
   }
 
   el.querySelector('.signal-alert-close').addEventListener('click', () => closeAlert(false));
@@ -1689,23 +1820,27 @@ function checkAndNotify(data, period) {
 
   if (sig['做多'] && !(prev.type === '做多' && prev.time === time)) {
     prev.type = '做多'; prev.time = time;
-    showSignalToast(data, '做多', period);
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(`▲ 做多信号 — ${data.name} [${ALERT_PERIOD_LABELS[period]||period}]`, {
-        body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-        tag:  `${sym}-long-${period}`,
-      });
+    if (!_silentInit) {
+      showSignalToast(data, '做多', period);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(`▲ 做多信号 — ${data.name} [${ALERT_PERIOD_LABELS[period]||period}]`, {
+          body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+          tag:  `${sym}-long-${period}`,
+        });
+      }
     }
   }
 
   if (sig['做空'] && !(prev.type === '做空' && prev.time === time)) {
     prev.type = '做空'; prev.time = time;
-    showSignalToast(data, '做空', period);
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(`▼ 做空信号 — ${data.name} [${ALERT_PERIOD_LABELS[period]||period}]`, {
-        body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
-        tag:  `${sym}-short-${period}`,
-      });
+    if (!_silentInit) {
+      showSignalToast(data, '做空', period);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(`▼ 做空信号 — ${data.name} [${ALERT_PERIOD_LABELS[period]||period}]`, {
+          body: `${time.slice(0,16)}  收盘 ${meta.close?.toFixed(0)}  K=${meta.K?.toFixed(1)}`,
+          tag:  `${sym}-short-${period}`,
+        });
+      }
     }
   }
 }
@@ -1719,9 +1854,9 @@ setInterval(() => {
 // 趋势面板：每5分钟刷新一次（首次在 loadData 后触发）
 setInterval(updateTrendPanel, 5 * 60000);
 
-// 后端信号队列：每3秒轮询（scheduler.py 或 /api/test/signal 注入的信号）
+// 后端信号队列：每3秒轮询（只取本次会话连接后产生的信号，防重复推送）
 function _consumePending() {
-  fetch('/api/signals/pending').then(r => r.json()).then(items => {
+  fetch(`/api/signals/pending?since=${encodeURIComponent(_sessionStart)}`).then(r => r.json()).then(items => {
     items.forEach(item => {
       const fakeData = {
         symbol: item.symbol, name: item.name, period: item.period,
