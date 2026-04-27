@@ -462,9 +462,9 @@ function updateKlineLegend(bar) {
 }
 
 // ── 多周期配置 ────────────────────────────────────────
-const ALERT_PERIOD_DURATIONS = { '15':8, '30':15, '60':30, '120':60, 'daily':240, 'weekly':1440 }; // 分钟
-const ALERT_PERIOD_LABELS    = { '15':'15分', '30':'30分', '60':'60分', '120':'120分', 'daily':'日线', 'weekly':'周线' };
-const SCAN_INTERVALS_MS      = { '15':5*60000, '30':5*60000, '60':15*60000, '120':30*60000, 'daily':Infinity, 'weekly':Infinity };
+const ALERT_PERIOD_DURATIONS = { '5':3, '15':8, '30':15, '60':30, '120':60, 'daily':240, 'weekly':1440 }; // 分钟
+const ALERT_PERIOD_LABELS    = { '5':'5分', '15':'15分', '30':'30分', '60':'60分', '120':'120分', 'daily':'日线', 'weekly':'周线' };
+const SCAN_INTERVALS_MS      = { '5':2*60000, '15':5*60000, '30':5*60000, '60':15*60000, '120':30*60000, 'daily':Infinity, 'weekly':Infinity };
 const _lastScanTime = {}; // 'symbol|period' -> timestamp
 
 const COMMON = {
@@ -1511,7 +1511,7 @@ function renderAlertPeriodDropdown() {
   if (!dd) return;
   const cur = getAlertPeriods();
   const isMulti = cur.length > 1;
-  const periods = ['15','30','60','120','daily','weekly'];
+  const periods = ['5','15','30','60','120','daily','weekly'];
   dd.innerHTML = '';
 
   // 单选行
