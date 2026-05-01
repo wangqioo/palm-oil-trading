@@ -219,6 +219,7 @@ body.fullscreen #sidebar { display: none; }
   <div class="spacer"></div>
   <div class="period-btns">
     <button class="period-btn" data-p="1">1分</button>
+    <button class="period-btn" data-p="3">3分</button>
     <button class="period-btn" data-p="5">5分</button>
     <button class="period-btn" data-p="15">15分</button>
     <button class="period-btn active" data-p="30">30分</button>
@@ -315,7 +316,7 @@ body.fullscreen #sidebar { display: none; }
       <div style="flex:1;"></div>
       <span style="font-size:11px;color:var(--muted);">触发周期</span>
       <div class="alert-period-wrap" style="position:relative;">
-        <button class="icon-btn" id="btn-alert-period" title="触发周期" style="width:auto;padding:0 10px;font-size:11px;gap:4px;"><span id="alert-period-label">30分</span>&nbsp;▼</button>
+        <button class="icon-btn" id="btn-alert-period" title="触发周期" style="width:auto;padding:0 10px;font-size:11px;gap:4px;"><span id="alert-period-label">3分</span>&nbsp;▼</button>
         <div id="alert-period-dropdown" class="alert-period-dropdown up"></div>
       </div>
     </div>
@@ -366,8 +367,8 @@ const _unreadSignals = [];
 const _symbolStatus  = {};
 const _expiredKeys   = new Set();
 let currentPeriod = '30';
-let currentSymbol = 'P0';
-let currentSymbolName = '棕榈油主力';
+let currentSymbol = 'NI0';
+let currentSymbolName = '沪镍主力';
 let allData = null;
 let kChart, bsdChart;
 let candleSeries, volSeries, supportSeries, markerSeries;
@@ -462,9 +463,9 @@ function updateKlineLegend(bar) {
 }
 
 // ── 多周期配置 ────────────────────────────────────────
-const ALERT_PERIOD_DURATIONS = { '15':8, '30':15, '60':30, '120':60, 'daily':240, 'weekly':1440 }; // 分钟
-const ALERT_PERIOD_LABELS    = { '15':'15分', '30':'30分', '60':'60分', '120':'120分', 'daily':'日线', 'weekly':'周线' };
-const SCAN_INTERVALS_MS      = { '15':5*60000, '30':5*60000, '60':15*60000, '120':30*60000, 'daily':Infinity, 'weekly':Infinity };
+const ALERT_PERIOD_DURATIONS = { '1':2, '3':3, '5':5, '15':8, '30':15, '60':30, '120':60, 'daily':240, 'weekly':1440 }; // 分钟
+const ALERT_PERIOD_LABELS    = { '1':'1分', '3':'3分', '5':'5分', '15':'15分', '30':'30分', '60':'60分', '120':'120分', 'daily':'日线', 'weekly':'周线' };
+const SCAN_INTERVALS_MS      = { '1':60000, '3':60000, '5':60000, '15':5*60000, '30':5*60000, '60':15*60000, '120':30*60000, 'daily':Infinity, 'weekly':Infinity };
 const _lastScanTime = {}; // 'symbol|period' -> timestamp
 
 const COMMON = {
@@ -1134,15 +1135,21 @@ document.querySelectorAll('.period-btn[data-p]').forEach(btn => {
 
 // ── 自选股管理 ────────────────────────────────────────
 const DEFAULT_WATCHLIST = [
-  { symbol: 'BC0', name: '国际铜主力' },
-  { symbol: 'AG0', name: '白银主力' },
+  { symbol: 'NI0', name: '沪镍主力'   },
+  { symbol: 'PG0', name: '液化气主力' },
+  { symbol: 'CF0', name: '棉花主力'   },
+  { symbol: 'LC0', name: '碳酸锂主力' },
+  { symbol: 'LH0', name: '生猪主力'   },
+  { symbol: 'AL0', name: '沪铝主力'   },
+  { symbol: 'JM0', name: '焦煤主力'   },
+  { symbol: 'CU0', name: '沪铜主力'   },
+  { symbol: 'SC0', name: '原油主力'   },
+  { symbol: 'RU0', name: '橡胶主力'   },
   { symbol: 'P0',  name: '棕榈油主力' },
-  { symbol: 'CU0', name: '铜主力' },
-  { symbol: 'SA0', name: '纯碱主力' },
-  { symbol: 'SN2605', name: '白糖2605' },
+  { symbol: 'AG0', name: '沪银主力'   },
 ];
 
-const WATCHLIST_VERSION = '4';
+const WATCHLIST_VERSION = '5';
 function loadWatchlist() {
   try {
     // 版本不匹配时重置为默认（合约换月）
@@ -1350,6 +1357,8 @@ async function scanAllWatchlist() {
       // 按周期限速：避免过于频繁的 API 调用
       const minInterval = SCAN_INTERVALS_MS[period] ?? 5 * 60000;
       const scanKey = `${item.symbol}|${period}`;
+      // 该 symbol+period 组合本次会话首次扫描时静默——消化存量信号，防止切换周期后立即弹旧窗
+      const isFirstScan = !_lastScanTime[scanKey];
       if (_lastScanTime[scanKey] && now - _lastScanTime[scanKey] < minInterval) continue;
 
       try {
@@ -1367,10 +1376,10 @@ async function scanAllWatchlist() {
 
         if (sig['做多'] && !(prev.type === '做多' && prev.time === sigTime)) {
           prev.type = '做多'; prev.time = sigTime;
-          if (!silent) triggered[period] = { sigType: '做多', data: scanData };
+          if (!silent && !isFirstScan) triggered[period] = { sigType: '做多', data: scanData };
         } else if (sig['做空'] && !(prev.type === '做空' && prev.time === sigTime)) {
           prev.type = '做空'; prev.time = sigTime;
-          if (!silent) triggered[period] = { sigType: '做空', data: scanData };
+          if (!silent && !isFirstScan) triggered[period] = { sigType: '做空', data: scanData };
         }
       } catch(e) {}
     }
@@ -1416,7 +1425,7 @@ async function updateTrendPanel() {
 function renderTrendPanel(data) {
   if (!data || !data.trend) return;
   const trend = data.trend;
-  const order = [['weekly','周线'],['daily','日线'],['120','120分'],['60','60分'],['30','30分'],['15','15分']];
+  const order = [['weekly','周线'],['daily','日线'],['120','120分'],['60','60分'],['30','30分'],['15','15分'],['5','5分'],['3','3分'],['1','1分']];
   const statusIcon = { bull:'🔴 多头', bear:'🟢 空头', wait:'🟡 等待', unknown:'⚫ --' };
 
   const list = document.getElementById('trend-panel-list');
@@ -1482,9 +1491,16 @@ function playAlertSound() {
 
 // ── 弹窗周期管理 ──────────────────────────────────────
 
+const ALERT_PERIOD_VER = '2';  // 升版本强制重置旧 localStorage
 function getAlertPeriods() {
-  try { return JSON.parse(localStorage.getItem('alert_periods')) || ['30']; }
-  catch { return ['30']; }
+  try {
+    if (localStorage.getItem('alert_period_ver') !== ALERT_PERIOD_VER) {
+      localStorage.setItem('alert_period_ver', ALERT_PERIOD_VER);
+      localStorage.removeItem('alert_periods');
+      return ['3'];
+    }
+    return JSON.parse(localStorage.getItem('alert_periods')) || ['3'];
+  } catch { return ['3']; }
 }
 function setAlertPeriods(periods) {
   localStorage.setItem('alert_periods', JSON.stringify(periods));
@@ -1511,7 +1527,7 @@ function renderAlertPeriodDropdown() {
   if (!dd) return;
   const cur = getAlertPeriods();
   const isMulti = cur.length > 1;
-  const periods = ['15','30','60','120','daily','weekly'];
+  const periods = ['1','3','5','15','30','60','120','daily','weekly'];
   dd.innerHTML = '';
 
   // 单选行
@@ -1562,7 +1578,7 @@ function renderAlertPeriodDropdown() {
 }
 function _toggleMultiMode() {
   const cur = getAlertPeriods();
-  setAlertPeriods(cur.length === 1 ? [cur[0], cur[0] === '30' ? 'daily' : '30'] : ['30']);
+  setAlertPeriods(cur.length === 1 ? [cur[0], cur[0] === '3' ? 'daily' : '3'] : ['3']);
 }
 
 // ── 弹窗时效 ──────────────────────────────────────────

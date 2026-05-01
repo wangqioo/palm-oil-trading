@@ -13,15 +13,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 app = Flask(__name__, static_folder="dashboard")
 CORS(app)
 
-PERIOD_MAP = {'1': '1', '5': '5', '15': '15', '30': '30', '60': '60', '120': '120'}
+PERIOD_MAP = {'1': '1', '3': '3', '5': '5', '15': '15', '30': '30', '60': '60', '120': '120'}
 
 # 使用新浪主力连续合约（品种前缀+0），永远跟踪当前主力，无需换月维护
 SYMBOLS = {
-    'P0':  {'name': '棕榈油主力',  'sina_code': 'P0',  'daily_code': 'P0'},
-    'AG0': {'name': '白银主力',    'sina_code': 'AG0', 'daily_code': 'AG0'},
-    'BC0': {'name': '国际铜主力',  'sina_code': 'BC0', 'daily_code': 'BC0'},
-    'CU0': {'name': '铜主力',      'sina_code': 'CU0', 'daily_code': 'CU0'},
-    'SA0': {'name': '纯碱主力',    'sina_code': 'SA0', 'daily_code': 'SA0'},
+    'NI0': {'name': '沪镍主力',   'sina_code': 'NI0', 'daily_code': 'NI0'},  # 上期所
+    'PG0': {'name': '液化气主力', 'sina_code': 'PG0', 'daily_code': 'PG0'},  # 大商所
+    'CF0': {'name': '棉花主力',   'sina_code': 'CF0', 'daily_code': 'CF0'},  # 郑商所
+    'LC0': {'name': '碳酸锂主力', 'sina_code': 'LC0', 'daily_code': 'LC0'},  # 广期所
+    'LH0': {'name': '生猪主力',   'sina_code': 'LH0', 'daily_code': 'LH0'},  # 大商所 无夜盘
+    'AL0': {'name': '沪铝主力',   'sina_code': 'AL0', 'daily_code': 'AL0'},  # 上期所
+    'JM0': {'name': '焦煤主力',   'sina_code': 'JM0', 'daily_code': 'JM0'},  # 大商所
+    'CU0': {'name': '沪铜主力',   'sina_code': 'CU0', 'daily_code': 'CU0'},  # 上期所
+    'SC0': {'name': '原油主力',   'sina_code': 'SC0', 'daily_code': 'SC0'},  # 上期能源
+    'RU0': {'name': '橡胶主力',   'sina_code': 'RU0', 'daily_code': 'RU0'},  # 上期所
+    'P0':  {'name': '棕榈油主力', 'sina_code': 'P0',  'daily_code': 'P0'},   # 大商所
+    'AG0': {'name': '沪银主力',   'sina_code': 'AG0', 'daily_code': 'AG0'},  # 上期所
 }
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -60,23 +67,29 @@ def _is_new_signal(symbol, signal_type, candle_time):
         return True  # fail open
 
 # ── 后台扫描器 ────────────────────────────────────────────────────
-_active_period      = '30'
+_active_period      = '3'
 _active_period_lock = _threading.Lock()
 
 _PERIOD_LABEL = {
-    '1':'1分','5':'5分','15':'15分','30':'30分',
+    '1':'1分','3':'3分','5':'5分','15':'15分','30':'30分',
     '60':'60分','120':'120分','daily':'日线','weekly':'周线',
 }
 
 # ── 品种交易时段（夜盘结束时间，单位：分钟；night_next=True 表示跨越次日凌晨）────
+# LH0（生猪）无夜盘：night_end=15*60 使 "21:00<=t<900" 永假，夜间始终返回 closed
 _SYMBOL_NIGHT_END = {
-    'P0':  (23 * 60,        False),  # 大商所棕榈油      23:00
-    'AG0': ( 2 * 60 + 30,  True),   # 上期所白银        次日 02:30
-    'BC0': ( 1 * 60,        True),   # 上期能源国际铜    次日 01:00
-    'CU0': ( 1 * 60,        True),   # 上期所铜          次日 01:00
-    'SA0': (23 * 60,        False),  # 郑商所纯碱        23:00
+    'NI0': ( 1 * 60,       True),   # 上期所沪镍        次日 01:00
+    'PG0': (23 * 60,       False),  # 大商所液化气      23:00
+    'CF0': (23 * 60,       False),  # 郑商所棉花        23:00
+    'LC0': (23 * 60,       False),  # 广期所碳酸锂      23:00
+    'LH0': (15 * 60,       False),  # 大商所生猪        无夜盘
+    'AL0': ( 1 * 60,       True),   # 上期所沪铝        次日 01:00
+    'JM0': (23 * 60,       False),  # 大商所焦煤        23:00
+    'CU0': ( 1 * 60,       True),   # 上期所沪铜        次日 01:00
     'SC0': ( 2 * 60 + 30,  True),   # 上期能源原油      次日 02:30
-    'SN0': ( 1 * 60,        True),   # 上期所锡          次日 01:00
+    'RU0': ( 1 * 60,       True),   # 上期所橡胶        次日 01:00
+    'P0':  (23 * 60,       False),  # 大商所棕榈油      23:00
+    'AG0': ( 2 * 60 + 30,  True),   # 上期所沪银        次日 02:30
 }
 
 def get_market_status(symbol, now=None):
@@ -129,6 +142,7 @@ def _is_kline_close(period):
     m, h, wd = now.minute, now.hour, now.weekday()
     return {
         '1':      True,
+        '3':      m % 3  == 0,
         '5':      m % 5  == 0,
         '15':     m % 15 == 0,
         '30':     m % 30 == 0,
@@ -140,7 +154,7 @@ def _is_kline_close(period):
 
 # 各周期对应的分钟数（用于判断是否属于分钟线周期）
 _PERIOD_MINUTES = {
-    '1': 1, '5': 5, '15': 15, '30': 30, '60': 60, '120': 120,
+    '1': 1, '3': 3, '5': 5, '15': 15, '30': 30, '60': 60, '120': 120,
 }
 
 def _do_scan(period):
@@ -222,7 +236,7 @@ def clean(obj):
 
 # 分钟线内存缓存：按周期设定 TTL（秒），避免频繁重拉
 _minute_cache = {}
-_MINUTE_TTL = {'1': 20, '5': 60, '15': 180, '30': 300, '60': 600, '120': 1200}
+_MINUTE_TTL = {'1': 20, '3': 30, '5': 60, '15': 180, '30': 300, '60': 600, '120': 1200}
 
 # 日线内存缓存：TTL 300秒（每次请求均需日线用于支撑压力位计算）
 _daily_cache = {}
@@ -241,9 +255,10 @@ def get_minute_data(sina_code, period='15'):
         if now - ts < ttl:
             return df
 
-    fetch_p = '60' if period == '120' else PERIOD_MAP.get(period, '15')
+    fetch_p     = '60' if period == '120' else PERIOD_MAP.get(period, '15')
+    resample_to = '120min' if period == '120' else None   # 可能在3分钟降级时动态设置
 
-    # 带重试的拉取（最多2次，间隔1秒）
+    # 带重试的拉取（最多3次）；3分钟接口若不支持则自动降级1分聚合
     df = None
     for attempt in range(3):
         try:
@@ -251,7 +266,11 @@ def get_minute_data(sina_code, period='15'):
             break
         except Exception as e:
             print(f'{sina_code} {period}分 第{attempt+1}次失败: {e}')
-            if attempt < 2:
+            if period == '3' and attempt == 0 and resample_to is None:
+                print(f'{sina_code} 3分接口不支持，降级至1分聚合')
+                fetch_p     = '1'
+                resample_to = '3min'
+            elif attempt < 2:
                 _time.sleep(1)
 
     if df is None:
@@ -267,9 +286,9 @@ def get_minute_data(sina_code, period='15'):
         df = df.sort_values('date').reset_index(drop=True)
         if 'volume' not in df.columns:
             df['volume'] = 0
-        if period == '120':
+        if resample_to:
             df = (df.set_index('date')
-                    .resample('120min', closed='left', label='left')
+                    .resample(resample_to, closed='left', label='left')
                     .agg(open=('open', 'first'), high=('high', 'max'),
                          low=('low', 'min'),   close=('close', 'last'),
                          volume=('volume', 'sum'))
@@ -543,6 +562,9 @@ def api_trend():
     from indicators import calc_main_signals, calc_bsd_wang
 
     PERIODS = [
+        ('1',      '1分'),
+        ('3',      '3分'),
+        ('5',      '5分'),
         ('15',     '15分'),
         ('30',     '30分'),
         ('60',     '60分'),
@@ -577,7 +599,7 @@ def api_trend():
             return p, {'status': 'unknown', 'label': lbl, 'K': None, 'D': None}
 
     # 并行拉取分钟线（日线/周线共用已拉好的 daily_df，不重复请求）
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=6) as ex:
         futures = {ex.submit(_calc_one, p, lbl): p for p, lbl in PERIODS}
         for fut in as_completed(futures):
             p, result = fut.result()
